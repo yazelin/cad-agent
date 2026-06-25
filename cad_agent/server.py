@@ -1,7 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel
 from . import brain, runner
@@ -25,6 +25,8 @@ def index() -> str:
 
 @app.get("/stl")
 def stl() -> FileResponse:
+    if _state["last_workdir"] is None:
+        raise HTTPException(status_code=404, detail="no successful build yet")
     return FileResponse(_state["last_workdir"] / "out.stl", media_type="model/stl")
 
 
@@ -36,8 +38,12 @@ async def _emit(ev: dict) -> None:
 async def build(req: BuildReq) -> dict:
     message = req.message
     result = None
+    # prev_for_this_iter tracks the script to pass to the next generate call.
+    # On the first attempt use the session's last successful script; on retries
+    # use the script that just failed so the AI can perform §6 self-repair.
+    prev_for_this_iter = _state["prev_script"]
     for attempt in range(MAX_RETRIES + 1):
-        script = await asyncio.to_thread(brain.generate, message, _state["prev_script"])
+        script = await asyncio.to_thread(brain.generate, message, prev_for_this_iter)
         await _emit({"type": "script", "script": script})
         result = await asyncio.to_thread(runner.run_freecad, script)
         if result.ok:
@@ -45,7 +51,9 @@ async def build(req: BuildReq) -> dict:
             _state["last_workdir"] = result.workdir
             await _emit({"type": "model", "stl": "/stl"})
             return {"ok": True}
-        # feed the error back so the next attempt can self-repair; cap at MAX_RETRIES.
+        # Feed the failed script back as prev on the next iteration so the AI
+        # sees what it produced and can repair it (§6 self-repair contract).
+        prev_for_this_iter = script
         message = (f"{req.message}\n\nThe previous attempt failed with:\n"
                    f"{result.stderr or 'timeout'}\nFix it.")
     await _emit({"type": "error", "stderr": result.stderr or "timeout"})

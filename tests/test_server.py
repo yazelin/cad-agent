@@ -31,3 +31,42 @@ def test_build_retries_on_failure(tmp_path, monkeypatch):
     r = TestClient(app).post("/build", json={"message": "a plate"})
     assert r.json() == {"ok": False}
     assert calls["n"] == 3  # initial + 2 retries
+
+def test_build_retry_feeds_failed_script_as_prev(tmp_path, monkeypatch):
+    """T1: On 2nd and 3rd generate calls the prev_script arg must equal the
+    script returned by the immediately preceding (failed) generate call.
+    §6 self-repair contract: feed the failed script + stderr back so the AI
+    can actually repair it — not None / a stale script from a previous request.
+    """
+    generated = []  # scripts produced per call
+    prev_args = []  # prev_script received per call
+
+    def fake_gen(msg, prev=None):
+        prev_args.append(prev)
+        script = f"attempt {len(generated) + 1}"
+        generated.append(script)
+        return script
+
+    fail = RunResult(False, False, "", "boom", None, None, tmp_path)
+    monkeypatch.setattr(srv.brain, "generate", fake_gen)
+    monkeypatch.setattr(srv.runner, "run_freecad", lambda script, **k: fail)
+    srv._state["prev_script"] = None
+    r = TestClient(app).post("/build", json={"message": "a plate"})
+    assert r.json() == {"ok": False}
+    assert len(generated) == 3  # initial + 2 retries
+    # 1st call: no prior failed script, prev must be None (or existing state)
+    assert prev_args[0] is None
+    # 2nd call: prev must be the script from the 1st (failed) call
+    assert prev_args[1] == generated[0], (
+        f"2nd call got prev={prev_args[1]!r}, want {generated[0]!r}"
+    )
+    # 3rd call: prev must be the script from the 2nd (failed) call
+    assert prev_args[2] == generated[1], (
+        f"3rd call got prev={prev_args[2]!r}, want {generated[1]!r}"
+    )
+
+def test_stl_returns_404_when_no_build(monkeypatch):
+    """I2: GET /stl must return 404 when no successful build has completed."""
+    srv._state["last_workdir"] = None
+    r = TestClient(app).get("/stl")
+    assert r.status_code == 404
