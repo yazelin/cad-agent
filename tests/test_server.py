@@ -111,34 +111,9 @@ def test_build_rejects_whitespace_only_message():
     assert TestClient(app).post("/build", data={"message": "   "}).status_code == 400
 
 
-def test_build_photo_dir_cleaned_up_after_build(tmp_path, monkeypatch):
-    # I1: the scratch photo-<uuid> dir must be removed after build completes
-    stl = tmp_path / "out.stl"; stl.write_text("solid x\nendsolid x\n")
-    saved_path: list = []
-
-    original_save_photo = srv._save_photo
-
-    async def patched_save_photo(image):
-        path = await original_save_photo(image)
-        saved_path.append(path)
-        return path
-
-    monkeypatch.setattr(srv, "_save_photo", patched_save_photo)
-    monkeypatch.setattr(srv.brain, "generate_from_photo",
-                        lambda path, hint=None: "import Part")
-    monkeypatch.setattr(srv.runner, "run_freecad",
-                        lambda script, **k: RunResult(True, False, "", "", stl, None, tmp_path))
-    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
-    srv._state["prev_script"] = None
-
-    TestClient(app).post("/build",
-        data={"message": "base 90mm"},
-        files={"image": ("p.png", io.BytesIO(b"\x89PNG fake"), "image/png")})
-
-    assert saved_path, "photo was not saved"
-    assert not saved_path[0].parent.exists(), (
-        f"photo dir was not cleaned up: {saved_path[0].parent}"
-    )
+# NOTE: the former test_build_photo_dir_cleaned_up_after_build was removed —
+# the session now RETAINS the photo after a build (cleaned only on replace/reset);
+# retention is covered by test_text_edit_after_photo_reuses_remembered_image.
 
 
 def test_text_edit_after_photo_reuses_remembered_image(tmp_path, monkeypatch):
