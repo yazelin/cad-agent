@@ -16,6 +16,10 @@
     <input type="file" id="photo" accept="image/*" style="flex:1" title="拍照/上傳實物照,AI 逆向建模">
   </div>
   <div id="row">
+    <span id="basephoto" style="flex:1; font:12px monospace; color:#888"></span>
+    <button id="reset" title="清除基準照片與目前模型,從頭開始">重設</button>
+  </div>
+  <div id="row">
     <input id="msg" placeholder="描述,或上傳照片後在此補充尺寸/備註">
     <button id="go">建</button>
   </div>
@@ -78,10 +82,26 @@ async function send(){
   fd.append("message", msg);
   if (photo) fd.append("image", photo);
   await fetch("/build", { method: "POST", body: fd });
+  refreshSession();
 }
 document.getElementById("go").onclick = send;
 document.getElementById("msg").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
 // open render-studio; it loads the latest built model from the shared handoff
 document.getElementById("toRender").onclick = () =>
   window.open("http://127.0.0.1:8098/?from=cad-agent", "_blank");
+async function refreshSession(){
+  try {
+    const s = await (await fetch("/session")).json();
+    document.getElementById("basephoto").textContent =
+      s.image ? ("基準照片:" + s.image + "(換照片或重設清除)") : "";
+  } catch (e) { /* ignore */ }
+}
+document.getElementById("reset").onclick = async () => {
+  await fetch("/reset", { method: "POST" });
+  document.getElementById("photo").value = "";
+  document.getElementById("msg").value = "";
+  refreshSession();
+  line("已重設,從頭開始");
+};
+refreshSession();
 </script>
