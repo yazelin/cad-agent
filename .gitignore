@@ -4,3 +4,9 @@ __pycache__/
 *.egg-info/
 dist/
 .pytest_cache/
+
+# generated artifacts (should never land at repo root)
+out.stl
+out.step
+/model.py
+/plate.py
