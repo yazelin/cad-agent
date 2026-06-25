@@ -118,3 +118,18 @@ def test_mounting_plate_end_to_end():
         )
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_photo_to_buildable_part():
+    fixture = Path(__file__).parent / "fixtures" / "part.png"
+    if not fixture.exists():
+        pytest.skip("no fixture image")
+    # snap FreeCAD cannot read /tmp; use a non-hidden dir under $HOME
+    scratch = Path(tempfile.mkdtemp(prefix="cad-agent-photo-test-", dir=Path.home()))
+    try:
+        script = brain.generate_from_photo(str(fixture), "largest dimension about 100mm")
+        result = runner.run_freecad(script, scratch_base=scratch, timeout=180)
+        assert result.ok, f"build failed: {result.stderr[-800:]}\n--- script ---\n{script}"
+        assert result.stl_path and result.stl_path.stat().st_size > 0
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
