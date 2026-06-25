@@ -2,7 +2,7 @@
 name = "cad-agent"
 version = "0.1.0"
 requires-python = ">=3.11"
-dependencies = ["fastapi", "uvicorn[standard]", "pydantic>=2"]
+dependencies = ["fastapi", "uvicorn[standard]", "pydantic>=2", "python-multipart"]
 
 [project.optional-dependencies]
 dev = ["pytest", "httpx"]

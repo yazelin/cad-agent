@@ -1,3 +1,4 @@
+import io
 from fastapi.testclient import TestClient
 from cad_agent.server import app
 import cad_agent.server as srv
@@ -15,7 +16,7 @@ def test_build_success_sets_prev_and_returns_ok(tmp_path, monkeypatch):
     monkeypatch.setattr(srv.runner, "run_freecad",
         lambda script, **k: RunResult(True, False, "", "", stl, None, tmp_path))
     srv._state["prev_script"] = None
-    r = TestClient(app).post("/build", json={"message": "a plate"})
+    r = TestClient(app).post("/build", data={"message": "a plate"})
     assert r.json() == {"ok": True}
     assert srv._state["prev_script"] == "L = 1\nshape.exportStl('out.stl')"
 
@@ -27,7 +28,7 @@ def test_build_writes_render_studio_handoff(tmp_path, monkeypatch):
     monkeypatch.setattr(srv.runner, "run_freecad",
         lambda script, **k: RunResult(True, False, "", "", stl, None, tmp_path))
     srv._state["prev_script"] = None
-    TestClient(app).post("/build", json={"message": "a plate"})
+    TestClient(app).post("/build", data={"message": "a plate"})
     assert handoff.exists() and handoff.read_text() == stl.read_text()
 
 def test_build_retries_on_failure(tmp_path, monkeypatch):
@@ -39,7 +40,7 @@ def test_build_retries_on_failure(tmp_path, monkeypatch):
     monkeypatch.setattr(srv.brain, "generate", fake_gen)
     monkeypatch.setattr(srv.runner, "run_freecad", lambda script, **k: fail)
     srv._state["prev_script"] = None
-    r = TestClient(app).post("/build", json={"message": "a plate"})
+    r = TestClient(app).post("/build", data={"message": "a plate"})
     assert r.json() == {"ok": False}
     assert calls["n"] == 3  # initial + 2 retries
 
@@ -62,7 +63,7 @@ def test_build_retry_feeds_failed_script_as_prev(tmp_path, monkeypatch):
     monkeypatch.setattr(srv.brain, "generate", fake_gen)
     monkeypatch.setattr(srv.runner, "run_freecad", lambda script, **k: fail)
     srv._state["prev_script"] = None
-    r = TestClient(app).post("/build", json={"message": "a plate"})
+    r = TestClient(app).post("/build", data={"message": "a plate"})
     assert r.json() == {"ok": False}
     assert len(generated) == 3  # initial + 2 retries
     # 1st call: no prior failed script, prev must be None (or existing state)
@@ -81,3 +82,23 @@ def test_stl_returns_404_when_no_build(monkeypatch):
     srv._state["last_workdir"] = None
     r = TestClient(app).get("/stl")
     assert r.status_code == 404
+
+def test_build_from_photo_routes_to_vision(tmp_path, monkeypatch):
+    stl = tmp_path / "out.stl"; stl.write_text("solid x\nendsolid x\n")
+    seen = {}
+    def fake_photo(path, hint=None):
+        seen["path"] = path; seen["hint"] = hint
+        return "import Part"
+    monkeypatch.setattr(srv.brain, "generate_from_photo", fake_photo)
+    monkeypatch.setattr(srv.runner, "run_freecad",
+        lambda script, **k: RunResult(True, False, "", "", stl, None, tmp_path))
+    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
+    srv._state["prev_script"] = None
+    r = TestClient(app).post("/build",
+        data={"message": "base 90mm"},
+        files={"image": ("p.png", io.BytesIO(b"\x89PNG fake"), "image/png")})
+    assert r.json() == {"ok": True}
+    assert seen["hint"] == "base 90mm" and seen["path"].endswith(".png")
+
+def test_build_requires_message_or_image():
+    assert TestClient(app).post("/build", data={"message": ""}).status_code == 400

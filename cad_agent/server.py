@@ -1,10 +1,10 @@
 import asyncio
 import json
 import shutil
+import uuid
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
-from pydantic import BaseModel
 from . import brain, runner
 
 app = FastAPI()
@@ -13,6 +13,8 @@ WEB = Path(__file__).parent / "web"
 _state: dict = {"prev_script": None, "last_workdir": None}
 _events: "asyncio.Queue[dict]" = asyncio.Queue()
 MAX_RETRIES = 2
+MAX_IMAGE_BYTES = 25 * 1024 * 1024
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
 # Shared handoff to the render-studio app: the latest successful STL is copied
 # here so render-studio can render it. Non-hidden dir; both apps' servers use it.
@@ -26,10 +28,6 @@ def _write_handoff(workdir: Path) -> None:
         shutil.copyfile(workdir / "out.stl", HANDOFF_STL)
     except OSError:
         pass
-
-
-class BuildReq(BaseModel):
-    message: str
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -48,16 +46,35 @@ async def _emit(ev: dict) -> None:
     await _events.put(ev)
 
 
+async def _save_photo(image: UploadFile) -> Path:
+    ext = Path(image.filename or "photo.png").suffix.lower()
+    if ext not in IMAGE_EXTS:
+        raise HTTPException(status_code=400, detail="image must be png/jpg/jpeg/webp")
+    data = await image.read()
+    if len(data) > MAX_IMAGE_BYTES:
+        raise HTTPException(status_code=400, detail="image too large (max 25 MB)")
+    img_dir = runner.DEFAULT_SCRATCH / ("photo-" + uuid.uuid4().hex[:12])
+    img_dir.mkdir(parents=True, exist_ok=True)
+    path = img_dir / ("photo" + ext)
+    path.write_bytes(data)
+    return path
+
+
 @app.post("/build")
-async def build(req: BuildReq) -> dict:
-    message = req.message
+async def build(message: str = Form(""), image: UploadFile | None = File(None)) -> dict:
+    if not message and image is None:
+        raise HTTPException(status_code=400, detail="describe a part or upload a photo")
+    image_path = await _save_photo(image) if image is not None else None
+
     result = None
-    # prev_for_this_iter tracks the script to pass to the next generate call.
-    # On the first attempt use the session's last successful script; on retries
-    # use the script that just failed so the AI can perform §6 self-repair.
     prev_for_this_iter = _state["prev_script"]
+    gen_message = message
     for attempt in range(MAX_RETRIES + 1):
-        script = await asyncio.to_thread(brain.generate, message, prev_for_this_iter)
+        if attempt == 0 and image_path is not None:
+            script = await asyncio.to_thread(
+                brain.generate_from_photo, str(image_path), message or None)
+        else:
+            script = await asyncio.to_thread(brain.generate, gen_message, prev_for_this_iter)
         await _emit({"type": "script", "script": script})
         result = await asyncio.to_thread(runner.run_freecad, script)
         if result.ok:
@@ -66,11 +83,9 @@ async def build(req: BuildReq) -> dict:
             _write_handoff(result.workdir)
             await _emit({"type": "model", "stl": "/stl"})
             return {"ok": True}
-        # Feed the failed script back as prev on the next iteration so the AI
-        # sees what it produced and can repair it (§6 self-repair contract).
         prev_for_this_iter = script
-        message = (f"{req.message}\n\nThe previous attempt failed with:\n"
-                   f"{result.stderr or 'timeout'}\nFix it.")
+        gen_message = (f"{message or 'the photographed part'}\n\nThe previous attempt "
+                       f"failed with:\n{result.stderr or 'timeout'}\nFix it.")
     await _emit({"type": "error", "stderr": result.stderr or "timeout"})
     return {"ok": False}
 
