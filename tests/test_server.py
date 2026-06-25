@@ -1,9 +1,18 @@
 import io
+import pytest
 from fastapi.testclient import TestClient
 from cad_agent.server import app
 import cad_agent.server as srv
 from cad_agent.runner import RunResult
 from pathlib import Path
+
+
+@pytest.fixture(autouse=True)
+def _reset_state():
+    srv._state.clear()
+    srv._state.update({"prev_script": None, "last_workdir": None, "last_image": None})
+    yield
+
 
 def test_index_serves_html():
     r = TestClient(app).get("/")
@@ -99,6 +108,31 @@ def test_build_from_photo_routes_to_vision(tmp_path, monkeypatch):
         files={"image": ("p.png", io.BytesIO(b"\x89PNG fake"), "image/png")})
     assert r.json() == {"ok": True}
     assert seen["hint"] == "base 90mm" and seen["path"].endswith(".png")
+
+def test_new_image_upload_resets_prev_script(tmp_path, monkeypatch):
+    """I2: uploading a new image with stale prev_script must call generate_from_photo
+    with prev=None (fresh part, not anchored to the old script)."""
+    stl = tmp_path / "out.stl"; stl.write_text("solid x\nendsolid x\n")
+    received_prev = {}
+
+    def fake_photo(path, hint=None, prev=None):
+        received_prev["prev"] = prev
+        return "import Part"
+
+    monkeypatch.setattr(srv.brain, "generate_from_photo", fake_photo)
+    monkeypatch.setattr(srv.runner, "run_freecad",
+        lambda script, **k: RunResult(True, False, "", "", stl, None, tmp_path))
+    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
+    # Stale state: a previous build left prev_script set
+    srv._state["prev_script"] = "OLD"
+    r = TestClient(app).post("/build",
+        data={"message": "new part"},
+        files={"image": ("p.png", io.BytesIO(b"\x89PNG fake"), "image/png")})
+    assert r.json() == {"ok": True}
+    assert received_prev["prev"] is None, (
+        f"expected prev=None on fresh upload, got {received_prev['prev']!r}"
+    )
+
 
 def test_build_requires_message_or_image():
     srv._state["last_image"] = None

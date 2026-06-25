@@ -86,8 +86,10 @@ async def build(message: str = Form(""), image: UploadFile | None = File(None)) 
     if not message.strip() and image is None and _state["last_image"] is None:
         raise HTTPException(status_code=400, detail="describe a part or upload a photo")
     if image is not None:
-        _clear_last_image()                       # a new upload replaces the old
-        _state["last_image"] = str(await _save_photo(image))
+        new_path = str(await _save_photo(image))  # validates + writes; raises before any clear
+        _clear_last_image()                        # only clear AFTER save succeeds
+        _state["last_image"] = new_path
+        _state["prev_script"] = None              # fresh part — do not anchor on old script
     active_image = _state["last_image"]
     if active_image and not Path(active_image).exists():
         active_image = None
@@ -112,7 +114,7 @@ async def build(message: str = Form(""), image: UploadFile | None = File(None)) 
             await _emit({"type": "model", "stl": "/stl"})
             return {"ok": True}
         prev_for_this_iter = script
-        gen_hint = (f"The previous attempt failed with:\n{result.stderr or 'timeout'}\nFix it.")
+        gen_hint = (f"{message or 'the part'}\n\nThe previous attempt failed with:\n{result.stderr or 'timeout'}\nFix it.")
     await _emit({"type": "error", "stderr": result.stderr or "timeout"})
     return {"ok": False}
 
