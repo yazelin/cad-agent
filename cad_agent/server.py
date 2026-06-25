@@ -62,32 +62,36 @@ async def _save_photo(image: UploadFile) -> Path:
 
 @app.post("/build")
 async def build(message: str = Form(""), image: UploadFile | None = File(None)) -> dict:
-    if not message and image is None:
+    if not message.strip() and image is None:
         raise HTTPException(status_code=400, detail="describe a part or upload a photo")
     image_path = await _save_photo(image) if image is not None else None
 
     result = None
     prev_for_this_iter = _state["prev_script"]
     gen_message = message
-    for attempt in range(MAX_RETRIES + 1):
-        if attempt == 0 and image_path is not None:
-            script = await asyncio.to_thread(
-                brain.generate_from_photo, str(image_path), message or None)
-        else:
-            script = await asyncio.to_thread(brain.generate, gen_message, prev_for_this_iter)
-        await _emit({"type": "script", "script": script})
-        result = await asyncio.to_thread(runner.run_freecad, script)
-        if result.ok:
-            _state["prev_script"] = script
-            _state["last_workdir"] = result.workdir
-            _write_handoff(result.workdir)
-            await _emit({"type": "model", "stl": "/stl"})
-            return {"ok": True}
-        prev_for_this_iter = script
-        gen_message = (f"{message or 'the photographed part'}\n\nThe previous attempt "
-                       f"failed with:\n{result.stderr or 'timeout'}\nFix it.")
-    await _emit({"type": "error", "stderr": result.stderr or "timeout"})
-    return {"ok": False}
+    try:
+        for attempt in range(MAX_RETRIES + 1):
+            if attempt == 0 and image_path is not None:
+                script = await asyncio.to_thread(
+                    brain.generate_from_photo, str(image_path), message or None)
+            else:
+                script = await asyncio.to_thread(brain.generate, gen_message, prev_for_this_iter)
+            await _emit({"type": "script", "script": script})
+            result = await asyncio.to_thread(runner.run_freecad, script)
+            if result.ok:
+                _state["prev_script"] = script
+                _state["last_workdir"] = result.workdir
+                _write_handoff(result.workdir)
+                await _emit({"type": "model", "stl": "/stl"})
+                return {"ok": True}
+            prev_for_this_iter = script
+            gen_message = (f"{message or 'the photographed part'}\n\nThe previous attempt "
+                           f"failed with:\n{result.stderr or 'timeout'}\nFix it.")
+        await _emit({"type": "error", "stderr": result.stderr or "timeout"})
+        return {"ok": False}
+    finally:
+        if image_path is not None:
+            shutil.rmtree(image_path.parent, ignore_errors=True)
 
 
 @app.get("/events")

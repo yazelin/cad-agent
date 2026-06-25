@@ -8,11 +8,11 @@ import pytest
 
 from cad_agent import brain, runner
 
-# Real end-to-end: needs a FreeCAD headless binary AND the claude CLI. Auto-skips
-# when FreeCAD is absent so the suite stays green on machines without it.
+# Real end-to-end: needs both the FreeCAD headless binary AND the claude CLI.
+# Auto-skips when either is absent so the suite stays green on machines without them.
 pytestmark = pytest.mark.skipif(
-    shutil.which(runner.default_freecad_cmd()) is None,
-    reason="no FreeCAD headless binary found",
+    shutil.which(runner.default_freecad_cmd()) is None or shutil.which("claude") is None,
+    reason="no FreeCAD headless binary or claude CLI found",
 )
 
 

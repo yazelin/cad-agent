@@ -11,8 +11,11 @@ FREECAD_SYSTEM_PROMPT = """You write FreeCAD Python scripts to run headless unde
 Hard rules:
 - Put every tunable dimension as an UPPERCASE variable at the TOP of the script.
 - Build the part as a Part shape (Part.makeBox, boolean cuts for holes, etc.).
-- Import every name you use. `App` and `Part` are preloaded; for points use
-  App.Vector(x, y, z). Do NOT use Base.Vector unless you `from FreeCAD import Base`.
+- Always start the script with EXACTLY these two import lines (no variation):
+    import FreeCAD as App
+    import Part
+  Do NOT write `from FreeCAD import App` — that raises ImportError under freecadcmd.
+- Use App.Vector(x, y, z) for points.
 - End by exporting BOTH files to the current directory (bare names, no path):
     shape.exportStl('out.stl')
     shape.exportStep('out.step')
@@ -20,12 +23,14 @@ Hard rules:
 - Do not create or write any files; put the whole script in your reply text.
 """
 
-# `claude -p` is agentic: left unrestricted it may use its Write tool to save the
-# script to a file and reply with prose instead of printing the code. Disabling
-# the file-mutating and shell tools forces the code into the text response.
+# `claude -p` is agentic: use an allowlist so only the Read tool is available.
+# Read is needed so claude can view the image by absolute path in generate_from_photo.
+# All other tools (Write, Edit, Bash, WebFetch, WebSearch, Task, Glob, Grep, etc.)
+# are implicitly denied because they are not on the allowlist. This hardens both
+# generate (text) and generate_from_photo (vision), which share this cmd.
 DEFAULT_CLAUDE_CMD = [
     "claude", "-p",
-    "--disallowed-tools", "Write", "Edit", "MultiEdit", "NotebookEdit", "Bash",
+    "--allowed-tools", "Read",
 ]
 
 def build_prompt(user_msg: str, prev_script: str | None) -> str:
@@ -66,7 +71,11 @@ PHOTO_SYSTEM_PROMPT = """You reverse-engineer a photographed mechanical part int
 - Decompose the part into Part primitives (Part.makeBox, Part.makeCylinder, boolean cuts).
 - Put every tunable dimension as an UPPERCASE variable at the TOP. If no scale is
   visible, assume the largest dimension is about 100 mm.
-- Import every name you use; App and Part are preloaded; use App.Vector for points.
+- Always start the script with EXACTLY these two import lines (no variation):
+    import FreeCAD as App
+    import Part
+  Do NOT write `from FreeCAD import App` — that raises ImportError under freecadcmd.
+- Use App.Vector(x, y, z) for points.
 - End by exporting BOTH files to the current directory (bare names):
     shape.exportStl('out.stl')
     shape.exportStep('out.step')

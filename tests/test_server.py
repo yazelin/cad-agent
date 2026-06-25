@@ -102,3 +102,38 @@ def test_build_from_photo_routes_to_vision(tmp_path, monkeypatch):
 
 def test_build_requires_message_or_image():
     assert TestClient(app).post("/build", data={"message": ""}).status_code == 400
+
+
+def test_build_rejects_whitespace_only_message():
+    # M1: whitespace-only message with no image must return 400
+    assert TestClient(app).post("/build", data={"message": "   "}).status_code == 400
+
+
+def test_build_photo_dir_cleaned_up_after_build(tmp_path, monkeypatch):
+    # I1: the scratch photo-<uuid> dir must be removed after build completes
+    stl = tmp_path / "out.stl"; stl.write_text("solid x\nendsolid x\n")
+    saved_path: list = []
+
+    original_save_photo = srv._save_photo
+
+    async def patched_save_photo(image):
+        path = await original_save_photo(image)
+        saved_path.append(path)
+        return path
+
+    monkeypatch.setattr(srv, "_save_photo", patched_save_photo)
+    monkeypatch.setattr(srv.brain, "generate_from_photo",
+                        lambda path, hint=None: "import Part")
+    monkeypatch.setattr(srv.runner, "run_freecad",
+                        lambda script, **k: RunResult(True, False, "", "", stl, None, tmp_path))
+    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
+    srv._state["prev_script"] = None
+
+    TestClient(app).post("/build",
+        data={"message": "base 90mm"},
+        files={"image": ("p.png", io.BytesIO(b"\x89PNG fake"), "image/png")})
+
+    assert saved_path, "photo was not saved"
+    assert not saved_path[0].parent.exists(), (
+        f"photo dir was not cleaned up: {saved_path[0].parent}"
+    )
