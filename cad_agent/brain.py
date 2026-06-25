@@ -39,6 +39,17 @@ def build_prompt(user_msg: str, prev_script: str | None) -> str:
 
 _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\n(.*?)```", re.DOTALL)
 
+def _trim_trailing_prose(code: str) -> str:
+    # the build contract puts the exports last; drop anything after them
+    lines = code.splitlines()
+    last = -1
+    for i, ln in enumerate(lines):
+        if "exportStl(" in ln or "exportStep(" in ln:
+            last = i
+    if last >= 0:
+        return "\n".join(lines[:last + 1]).strip()
+    return code
+
 def strip_fences(text: str) -> str:
     text = text.strip()
     # Real claude output sometimes wraps the code in a fenced block AND adds
@@ -46,8 +57,8 @@ def strip_fences(text: str) -> str:
     # contents when present; otherwise treat the whole output as raw code.
     m = _FENCE_RE.search(text)
     if m:
-        return m.group(1).strip()
-    return text
+        text = m.group(1).strip()
+    return _trim_trailing_prose(text)
 
 def generate(user_msg: str, prev_script: str | None = None, *,
              claude_cmd: list[str] | None = None, timeout: float = 120) -> str:

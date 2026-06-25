@@ -29,3 +29,11 @@ def test_generate_uses_injected_cmd():
     # fake brain: ignores prompt, prints fixed code
     fake = [sys.executable, "-c", "print('L = 1')"]
     assert brain.generate("anything", claude_cmd=fake) == "L = 1"
+
+def test_strip_fences_trims_trailing_prose_without_fence():
+    raw = ("import Part\nshape = Part.makeBox(1,1,1)\n"
+           "shape.exportStl('out.stl')\nshape.exportStep('out.step')\n\n"
+           "skipped: fillets -- add when you have real measurements.")
+    out = brain.strip_fences(raw)
+    assert out.endswith("shape.exportStep('out.step')")
+    assert "skipped" not in out
