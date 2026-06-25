@@ -1,5 +1,6 @@
 import asyncio
 import json
+import shutil
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
@@ -12,6 +13,19 @@ WEB = Path(__file__).parent / "web"
 _state: dict = {"prev_script": None, "last_workdir": None}
 _events: "asyncio.Queue[dict]" = asyncio.Queue()
 MAX_RETRIES = 2
+
+# Shared handoff to the render-studio app: the latest successful STL is copied
+# here so render-studio can render it. Non-hidden dir; both apps' servers use it.
+HANDOFF_STL = Path.home() / "3d-pipeline" / "latest.stl"
+
+
+def _write_handoff(workdir: Path) -> None:
+    # best-effort: a handoff failure must never fail a build
+    try:
+        HANDOFF_STL.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(workdir / "out.stl", HANDOFF_STL)
+    except OSError:
+        pass
 
 
 class BuildReq(BaseModel):
@@ -49,6 +63,7 @@ async def build(req: BuildReq) -> dict:
         if result.ok:
             _state["prev_script"] = script
             _state["last_workdir"] = result.workdir
+            _write_handoff(result.workdir)
             await _emit({"type": "model", "stl": "/stl"})
             return {"ok": True}
         # Feed the failed script back as prev on the next iteration so the AI

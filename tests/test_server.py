@@ -19,6 +19,17 @@ def test_build_success_sets_prev_and_returns_ok(tmp_path, monkeypatch):
     assert r.json() == {"ok": True}
     assert srv._state["prev_script"] == "L = 1\nshape.exportStl('out.stl')"
 
+def test_build_writes_render_studio_handoff(tmp_path, monkeypatch):
+    stl = tmp_path / "out.stl"; stl.write_text("solid x\nendsolid x\n")
+    handoff = tmp_path / "handoff" / "latest.stl"
+    monkeypatch.setattr(srv, "HANDOFF_STL", handoff)
+    monkeypatch.setattr(srv.brain, "generate", lambda msg, prev=None: "L = 1")
+    monkeypatch.setattr(srv.runner, "run_freecad",
+        lambda script, **k: RunResult(True, False, "", "", stl, None, tmp_path))
+    srv._state["prev_script"] = None
+    TestClient(app).post("/build", json={"message": "a plate"})
+    assert handoff.exists() and handoff.read_text() == stl.read_text()
+
 def test_build_retries_on_failure(tmp_path, monkeypatch):
     calls = {"n": 0}
     def fake_gen(msg, prev=None):

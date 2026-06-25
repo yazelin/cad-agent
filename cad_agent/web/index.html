@@ -16,6 +16,9 @@
     <input id="msg" placeholder="描述要建的件…">
     <button id="go">建</button>
   </div>
+  <div id="row">
+    <button id="toRender" style="flex:1" title="用 render-studio 渲染最近建好的模型">送去 render-studio 渲染</button>
+  </div>
 </div>
 <script type="importmap">
 { "imports": {
@@ -72,4 +75,7 @@ async function send(){
 }
 document.getElementById("go").onclick = send;
 document.getElementById("msg").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+// open render-studio; it loads the latest built model from the shared handoff
+document.getElementById("toRender").onclick = () =>
+  window.open("http://127.0.0.1:8098/?from=cad-agent", "_blank");
 </script>
