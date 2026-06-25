@@ -60,6 +60,38 @@ def strip_fences(text: str) -> str:
         text = m.group(1).strip()
     return _trim_trailing_prose(text)
 
+PHOTO_SYSTEM_PROMPT = """You reverse-engineer a photographed mechanical part into a FreeCAD Python script.
+
+- Look at the image referenced by path in the user message.
+- Decompose the part into Part primitives (Part.makeBox, Part.makeCylinder, boolean cuts).
+- Put every tunable dimension as an UPPERCASE variable at the TOP. If no scale is
+  visible, assume the largest dimension is about 100 mm.
+- Import every name you use; App and Part are preloaded; use App.Vector for points.
+- End by exporting BOTH files to the current directory (bare names):
+    shape.exportStl('out.stl')
+    shape.exportStep('out.step')
+- Output ONLY raw Python. No markdown fences, no prose, no explanation.
+- Do not write files; put the whole script in your reply text.
+"""
+
+def build_photo_prompt(image_path: str, hint: str | None) -> str:
+    parts = [PHOTO_SYSTEM_PROMPT, f"Image to model (read this file): {image_path}"]
+    if hint:
+        parts.append("Hint for dimensions/material/notes: " + hint)
+    return "\n\n".join(parts)
+
+def generate_from_photo(image_path: str, hint: str | None = None, *,
+                        claude_cmd: list[str] | None = None, timeout: float = 180) -> str:
+    # Reuses DEFAULT_CLAUDE_CMD: it allows Read (so claude can view the image) and
+    # disallows file/shell mutation. The image is read by absolute path, so the
+    # throwaway cwd is only a pollution guard.
+    prompt = build_photo_prompt(image_path, hint)
+    cmd = claude_cmd or DEFAULT_CLAUDE_CMD
+    with tempfile.TemporaryDirectory(prefix="cad-agent-photo-") as cwd:
+        proc = subprocess.run(cmd, input=prompt, cwd=cwd, capture_output=True,
+                              text=True, timeout=timeout)
+    return strip_fences(proc.stdout)
+
 def generate(user_msg: str, prev_script: str | None = None, *,
              claude_cmd: list[str] | None = None, timeout: float = 120) -> str:
     # The prompt goes on stdin, not argv: --disallowed-tools is variadic and

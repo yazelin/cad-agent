@@ -37,3 +37,17 @@ def test_strip_fences_trims_trailing_prose_without_fence():
     out = brain.strip_fences(raw)
     assert out.endswith("shape.exportStep('out.step')")
     assert "skipped" not in out
+
+def test_build_photo_prompt_includes_path_and_hint():
+    p = brain.build_photo_prompt("/tmp/part.png", "base is 90mm")
+    assert "/tmp/part.png" in p
+    assert "base is 90mm" in p
+    assert "100 mm" in p  # the no-scale fallback instruction is present
+
+def test_build_photo_prompt_without_hint():
+    p = brain.build_photo_prompt("/tmp/part.png", None)
+    assert "/tmp/part.png" in p
+
+def test_generate_from_photo_uses_injected_cmd():
+    fake = [sys.executable, "-c", "print('import Part')"]
+    assert brain.generate_from_photo("/tmp/part.png", claude_cmd=fake) == "import Part"
