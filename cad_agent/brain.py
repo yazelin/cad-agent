@@ -1,3 +1,4 @@
+import re
 import subprocess
 
 # NOTE: the exact FreeCAD export API (exportStl/exportStep on a Part shape) is
@@ -24,15 +25,17 @@ def build_prompt(user_msg: str, prev_script: str | None) -> str:
         parts.append("Write a script for: " + user_msg)
     return "\n\n".join(parts)
 
+_FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\n(.*?)```", re.DOTALL)
+
 def strip_fences(text: str) -> str:
     text = text.strip()
-    if not text.startswith("```"):
-        return text
-    lines = text.splitlines()
-    lines = lines[1:]  # drop opening ```lang
-    if lines and lines[-1].strip() == "```":
-        lines = lines[:-1]
-    return "\n".join(lines).strip()
+    # Real claude output sometimes wraps the code in a fenced block AND adds
+    # prose around it despite the prompt. Extract the first fenced block's
+    # contents when present; otherwise treat the whole output as raw code.
+    m = _FENCE_RE.search(text)
+    if m:
+        return m.group(1).strip()
+    return text
 
 def generate(user_msg: str, prev_script: str | None = None, *,
              claude_cmd: list[str] | None = None, timeout: float = 120) -> str:

@@ -15,6 +15,16 @@ def test_strip_fences():
     assert brain.strip_fences("```python\nL = 1\n```") == "L = 1"
     assert brain.strip_fences("L = 1") == "L = 1"
 
+def test_strip_fences_extracts_block_from_surrounding_prose():
+    # real claude output: prose before and after a fenced code block (the
+    # em-dash in the trailing prose previously leaked into the script)
+    raw = (
+        "Here is the script:\n\n"
+        "```python\nL = 80.0\nshape.exportStl('out.stl')\n```\n\n"
+        "Change L -- it is the length."
+    )
+    assert brain.strip_fences(raw) == "L = 80.0\nshape.exportStl('out.stl')"
+
 def test_generate_uses_injected_cmd():
     # fake brain: ignores prompt, prints fixed code
     fake = [sys.executable, "-c", "print('L = 1')"]
