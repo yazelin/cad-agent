@@ -10,7 +10,7 @@ from . import brain, runner
 app = FastAPI()
 WEB = Path(__file__).parent / "web"
 
-_state: dict = {"prev_script": None, "last_workdir": None}
+_state: dict = {"prev_script": None, "last_workdir": None, "last_image": None}
 _events: "asyncio.Queue[dict]" = asyncio.Queue()
 MAX_RETRIES = 2
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
@@ -42,8 +42,29 @@ def stl() -> FileResponse:
     return FileResponse(_state["last_workdir"] / "out.stl", media_type="model/stl")
 
 
+@app.post("/reset")
+def reset() -> dict:
+    _clear_last_image()
+    _state["prev_script"] = None
+    _state["last_workdir"] = None
+    return {"ok": True}
+
+
+@app.get("/session")
+def session() -> dict:
+    img = _state.get("last_image")
+    return {"image": Path(img).name if img else None}
+
+
 async def _emit(ev: dict) -> None:
     await _events.put(ev)
+
+
+def _clear_last_image() -> None:
+    img = _state.get("last_image")
+    if img:
+        shutil.rmtree(Path(img).parent, ignore_errors=True)
+    _state["last_image"] = None
 
 
 async def _save_photo(image: UploadFile) -> Path:
@@ -62,36 +83,38 @@ async def _save_photo(image: UploadFile) -> Path:
 
 @app.post("/build")
 async def build(message: str = Form(""), image: UploadFile | None = File(None)) -> dict:
-    if not message.strip() and image is None:
+    if not message.strip() and image is None and _state["last_image"] is None:
         raise HTTPException(status_code=400, detail="describe a part or upload a photo")
-    image_path = await _save_photo(image) if image is not None else None
+    if image is not None:
+        _clear_last_image()                       # a new upload replaces the old
+        _state["last_image"] = str(await _save_photo(image))
+    active_image = _state["last_image"]
+    if active_image and not Path(active_image).exists():
+        active_image = None
+        _state["last_image"] = None
 
     result = None
     prev_for_this_iter = _state["prev_script"]
-    gen_message = message
-    try:
-        for attempt in range(MAX_RETRIES + 1):
-            if attempt == 0 and image_path is not None:
-                script = await asyncio.to_thread(
-                    brain.generate_from_photo, str(image_path), message or None)
-            else:
-                script = await asyncio.to_thread(brain.generate, gen_message, prev_for_this_iter)
-            await _emit({"type": "script", "script": script})
-            result = await asyncio.to_thread(runner.run_freecad, script)
-            if result.ok:
-                _state["prev_script"] = script
-                _state["last_workdir"] = result.workdir
-                _write_handoff(result.workdir)
-                await _emit({"type": "model", "stl": "/stl"})
-                return {"ok": True}
-            prev_for_this_iter = script
-            gen_message = (f"{message or 'the photographed part'}\n\nThe previous attempt "
-                           f"failed with:\n{result.stderr or 'timeout'}\nFix it.")
-        await _emit({"type": "error", "stderr": result.stderr or "timeout"})
-        return {"ok": False}
-    finally:
-        if image_path is not None:
-            shutil.rmtree(image_path.parent, ignore_errors=True)
+    gen_hint = message or None
+    for attempt in range(MAX_RETRIES + 1):
+        if active_image is not None:
+            script = await asyncio.to_thread(
+                brain.generate_from_photo, active_image, gen_hint, prev_for_this_iter)
+        else:
+            script = await asyncio.to_thread(
+                brain.generate, gen_hint or message, prev_for_this_iter)
+        await _emit({"type": "script", "script": script})
+        result = await asyncio.to_thread(runner.run_freecad, script)
+        if result.ok:
+            _state["prev_script"] = script
+            _state["last_workdir"] = result.workdir
+            _write_handoff(result.workdir)
+            await _emit({"type": "model", "stl": "/stl"})
+            return {"ok": True}
+        prev_for_this_iter = script
+        gen_hint = (f"The previous attempt failed with:\n{result.stderr or 'timeout'}\nFix it.")
+    await _emit({"type": "error", "stderr": result.stderr or "timeout"})
+    return {"ok": False}
 
 
 @app.get("/events")

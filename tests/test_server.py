@@ -86,7 +86,7 @@ def test_stl_returns_404_when_no_build(monkeypatch):
 def test_build_from_photo_routes_to_vision(tmp_path, monkeypatch):
     stl = tmp_path / "out.stl"; stl.write_text("solid x\nendsolid x\n")
     seen = {}
-    def fake_photo(path, hint=None):
+    def fake_photo(path, hint=None, prev=None):
         seen["path"] = path; seen["hint"] = hint
         return "import Part"
     monkeypatch.setattr(srv.brain, "generate_from_photo", fake_photo)
@@ -101,11 +101,13 @@ def test_build_from_photo_routes_to_vision(tmp_path, monkeypatch):
     assert seen["hint"] == "base 90mm" and seen["path"].endswith(".png")
 
 def test_build_requires_message_or_image():
+    srv._state["last_image"] = None
     assert TestClient(app).post("/build", data={"message": ""}).status_code == 400
 
 
 def test_build_rejects_whitespace_only_message():
     # M1: whitespace-only message with no image must return 400
+    srv._state["last_image"] = None
     assert TestClient(app).post("/build", data={"message": "   "}).status_code == 400
 
 
@@ -137,3 +139,59 @@ def test_build_photo_dir_cleaned_up_after_build(tmp_path, monkeypatch):
     assert not saved_path[0].parent.exists(), (
         f"photo dir was not cleaned up: {saved_path[0].parent}"
     )
+
+
+def test_text_edit_after_photo_reuses_remembered_image(tmp_path, monkeypatch):
+    stl = tmp_path / "out.stl"; stl.write_text("solid x\nendsolid x\n")
+    calls = []
+    monkeypatch.setattr(srv.brain, "generate_from_photo",
+        lambda image, hint=None, prev=None: (calls.append((image, hint, prev)) or "import Part"))
+    monkeypatch.setattr(srv.runner, "run_freecad",
+        lambda script, **k: RunResult(True, False, "", "", stl, None, tmp_path))
+    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
+    # simulate a prior photo build having remembered an image + script
+    srv._state["last_image"] = str(stl)  # any existing file path
+    srv._state["prev_script"] = "OLD"
+    # a TEXT-ONLY build (no image field) must still route to vision with the remembered image
+    r = TestClient(app).post("/build", data={"message": "add two holes to the upright arm"})
+    assert r.json() == {"ok": True}
+    assert calls and calls[0][0] == str(stl)            # remembered image used
+    assert calls[0][1] == "add two holes to the upright arm"  # hint
+    assert calls[0][2] == "OLD"                          # prev_script carried
+
+
+def test_reset_clears_session(tmp_path, monkeypatch):
+    # Use a proper file path so _clear_last_image only removes its own parent dir
+    img_dir = tmp_path / "photo-abc"; img_dir.mkdir()
+    fake_img = img_dir / "photo.png"; fake_img.write_bytes(b"x")
+    srv._state["last_image"] = str(fake_img)  # dir-ish; _clear is best-effort
+    srv._state["prev_script"] = "OLD"; srv._state["last_workdir"] = tmp_path
+    assert TestClient(app).post("/reset").json() == {"ok": True}
+    assert srv._state["last_image"] is None
+    assert srv._state["prev_script"] is None
+    # after reset, a text build routes to generate (text), not vision
+    used = {}
+    monkeypatch.setattr(srv.brain, "generate", lambda m, p=None: used.setdefault("g", True) or "import Part")
+    monkeypatch.setattr(srv.runner, "run_freecad",
+        lambda s, **k: RunResult(False, False, "", "boom", None, None, tmp_path))
+    TestClient(app).post("/build", data={"message": "a plate"})
+    assert used.get("g") is True
+
+
+def test_session_reports_image_name(tmp_path):
+    srv._state["last_image"] = None
+    assert TestClient(app).get("/session").json() == {"image": None}
+    p = tmp_path / "photo.png"; p.write_bytes(b"x")
+    srv._state["last_image"] = str(p)
+    assert TestClient(app).get("/session").json() == {"image": "photo.png"}
+
+
+def test_missing_remembered_file_falls_back_to_text(tmp_path, monkeypatch):
+    srv._state["last_image"] = str(tmp_path / "gone.png")  # does not exist
+    srv._state["prev_script"] = None
+    used = {}
+    monkeypatch.setattr(srv.brain, "generate", lambda m, p=None: used.setdefault("g", True) or "x")
+    monkeypatch.setattr(srv.runner, "run_freecad",
+        lambda s, **k: RunResult(False, False, "", "boom", None, None, tmp_path))
+    TestClient(app).post("/build", data={"message": "a plate"})
+    assert used.get("g") is True and srv._state["last_image"] is None
