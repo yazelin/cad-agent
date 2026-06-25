@@ -51,3 +51,27 @@ def test_build_photo_prompt_without_hint():
 def test_generate_from_photo_uses_injected_cmd():
     fake = [sys.executable, "-c", "print('import Part')"]
     assert brain.generate_from_photo("/tmp/part.png", claude_cmd=fake) == "import Part"
+
+def test_build_photo_prompt_with_prev_script_includes_all_three():
+    p = brain.build_photo_prompt("/tmp/part.png", "add two holes to the upright arm",
+                                 prev_script="import Part\nshape = Part.makeBox(1,1,1)")
+    assert "/tmp/part.png" in p
+    assert "add two holes to the upright arm" in p
+    assert "Part.makeBox(1,1,1)" in p          # the current script is included
+    assert "Current script" in p
+
+def test_build_photo_prompt_without_prev_script_has_no_current_section():
+    p = brain.build_photo_prompt("/tmp/part.png", "arms 40mm", prev_script=None)
+    assert "Current script" not in p
+    assert "arms 40mm" in p
+
+def test_generate_from_photo_passes_prev_script(monkeypatch):
+    captured = {}
+    def fake_run(cmd, **kw):
+        captured["input"] = kw.get("input")
+        class R: stdout = "import Part"
+        return R()
+    monkeypatch.setattr(brain.subprocess, "run", fake_run)
+    out = brain.generate_from_photo("/tmp/p.png", "add holes", prev_script="OLD_SCRIPT")
+    assert out == "import Part"
+    assert "OLD_SCRIPT" in captured["input"] and "add holes" in captured["input"]

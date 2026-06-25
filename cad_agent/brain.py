@@ -81,20 +81,30 @@ PHOTO_SYSTEM_PROMPT = """You reverse-engineer a photographed mechanical part int
     shape.exportStep('out.step')
 - Output ONLY raw Python. No markdown fences, no prose, no explanation.
 - Do not write files; put the whole script in your reply text.
+- Build each part's holes/features in that part's own LOCAL coordinates first,
+  then rotate/position the finished part. Do not compute hole/feature coordinates
+  in an already-rotated frame.
 """
 
-def build_photo_prompt(image_path: str, hint: str | None) -> str:
+def build_photo_prompt(image_path: str, hint: str | None,
+                       prev_script: str | None = None) -> str:
     parts = [PHOTO_SYSTEM_PROMPT, f"Image to model (read this file): {image_path}"]
-    if hint:
+    if prev_script:
+        parts.append("Current script (revise it, do not start over):\n" + prev_script)
+        parts.append("Look at the image again and apply this change, fixing the "
+                     "script to better match the part: "
+                     + (hint or "improve the script's fidelity to the image"))
+    elif hint:
         parts.append("Hint for dimensions/material/notes: " + hint)
     return "\n\n".join(parts)
 
-def generate_from_photo(image_path: str, hint: str | None = None, *,
+def generate_from_photo(image_path: str, hint: str | None = None,
+                        prev_script: str | None = None, *,
                         claude_cmd: list[str] | None = None, timeout: float = 180) -> str:
     # Reuses DEFAULT_CLAUDE_CMD: it allows Read (so claude can view the image) and
     # disallows file/shell mutation. The image is read by absolute path, so the
     # throwaway cwd is only a pollution guard.
-    prompt = build_photo_prompt(image_path, hint)
+    prompt = build_photo_prompt(image_path, hint, prev_script)
     cmd = claude_cmd or DEFAULT_CLAUDE_CMD
     with tempfile.TemporaryDirectory(prefix="cad-agent-photo-") as cwd:
         proc = subprocess.run(cmd, input=prompt, cwd=cwd, capture_output=True,
