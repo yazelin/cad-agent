@@ -75,3 +75,13 @@ def test_generate_from_photo_passes_prev_script(monkeypatch):
     out = brain.generate_from_photo("/tmp/p.png", "add holes", prev_script="OLD_SCRIPT")
     assert out == "import Part"
     assert "OLD_SCRIPT" in captured["input"] and "add holes" in captured["input"]
+
+
+def test_strip_fences_trims_leading_prose_without_fence():
+    raw = ("Here's the revised script:\n\n"
+           "import Part\nshape = Part.makeBox(1,1,1)\n"
+           "shape.exportStl('out.stl')\nshape.exportStep('out.step')")
+    out = brain.strip_fences(raw)
+    assert out.startswith("import Part")
+    assert "Here's" not in out
+    assert out.endswith("shape.exportStep('out.step')")

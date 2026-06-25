@@ -133,3 +133,21 @@ def test_photo_to_buildable_part():
         assert result.stl_path and result.stl_path.stat().st_size > 0
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def test_photo_then_text_refine_still_builds():
+    fixture = Path(__file__).parent / "fixtures" / "part.png"
+    if not fixture.exists():
+        pytest.skip("no fixture image")
+    scratch = Path(tempfile.mkdtemp(prefix="cad-agent-refine-test-", dir=Path.home()))
+    try:
+        first = brain.generate_from_photo(str(fixture), "each arm about 40mm")
+        r1 = runner.run_freecad(first, scratch_base=scratch, timeout=180)
+        assert r1.ok, f"first build failed: {r1.stderr[-600:]}\n{first}"
+        second = brain.generate_from_photo(
+            str(fixture), "make sure every arm has two through-holes", prev_script=first)
+        r2 = runner.run_freecad(second, scratch_base=scratch, timeout=180)
+        assert r2.ok, f"refine build failed: {r2.stderr[-600:]}\n{second}"
+        assert r2.stl_path and r2.stl_path.stat().st_size > 0
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)

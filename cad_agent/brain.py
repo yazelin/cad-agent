@@ -43,16 +43,25 @@ def build_prompt(user_msg: str, prev_script: str | None) -> str:
     return "\n\n".join(parts)
 
 _FENCE_RE = re.compile(r"```[a-zA-Z0-9_+-]*\n(.*?)```", re.DOTALL)
+# a line that looks like the start of a FreeCAD script (import / comment / assignment / App./Part.)
+_CODE_START = re.compile(r"^\s*(import |from |#|App\.|Part\.|[A-Za-z_][A-Za-z0-9_]*\s*=)")
 
-def _trim_trailing_prose(code: str) -> str:
-    # the build contract puts the exports last; drop anything after them
+def _trim_to_code(code: str) -> str:
+    # bracket the real code: drop leading prose (before the first code-looking
+    # line) and trailing prose (after the last export). claude sometimes prepends
+    # "Here's the script:" or appends a "skipped: ..." note despite the prompt.
     lines = code.splitlines()
+    start = 0
+    for i, ln in enumerate(lines):
+        if _CODE_START.match(ln):
+            start = i
+            break
     last = -1
     for i, ln in enumerate(lines):
         if "exportStl(" in ln or "exportStep(" in ln:
             last = i
-    if last >= 0:
-        return "\n".join(lines[:last + 1]).strip()
+    if last >= start:
+        return "\n".join(lines[start:last + 1]).strip()
     return code
 
 def strip_fences(text: str) -> str:
@@ -63,7 +72,7 @@ def strip_fences(text: str) -> str:
     m = _FENCE_RE.search(text)
     if m:
         text = m.group(1).strip()
-    return _trim_trailing_prose(text)
+    return _trim_to_code(text)
 
 PHOTO_SYSTEM_PROMPT = """You reverse-engineer a photographed mechanical part into a FreeCAD Python script.
 
