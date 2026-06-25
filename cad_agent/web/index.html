@@ -13,7 +13,10 @@
 <div id="side">
   <div id="log"></div>
   <div id="row">
-    <input id="msg" placeholder="描述要建的件…">
+    <input type="file" id="photo" accept="image/*" style="flex:1" title="拍照/上傳實物照,AI 逆向建模">
+  </div>
+  <div id="row">
+    <input id="msg" placeholder="描述,或上傳照片後在此補充尺寸/備註">
     <button id="go">建</button>
   </div>
   <div id="row">
@@ -68,10 +71,13 @@ es.onmessage = e => {
 
 async function send(){
   const msg = document.getElementById("msg").value.trim();
-  if (!msg) return;
-  line("> " + msg);
-  await fetch("/build", { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message: msg }) });
+  const photo = document.getElementById("photo").files[0];
+  if (!msg && !photo) { line("describe a part or pick a photo"); return; }
+  line(photo ? ("> [photo] " + (msg || "")) : ("> " + msg));
+  const fd = new FormData();
+  fd.append("message", msg);
+  if (photo) fd.append("image", photo);
+  await fetch("/build", { method: "POST", body: fd });
 }
 document.getElementById("go").onclick = send;
 document.getElementById("msg").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
