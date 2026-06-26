@@ -23,3 +23,19 @@ def test_agentos_build_failure(tmp_path, monkeypatch):
     body = r.json()
     assert body["ok"] is False and body["stl_path"] is None
     assert "boom" in body["error"]
+
+import json
+from pathlib import Path
+
+def test_write_descriptor_content(tmp_path):
+    p = tmp_path / ".mori" / "cad-agent.json"
+    srv.write_descriptor(host="127.0.0.1", port=8099, path=p)
+    d = json.loads(p.read_text())
+    assert d == {"contract_version": 1, "host": "127.0.0.1", "port": 8099,
+                 "inference_path": "/agentos/build"}
+
+def test_write_descriptor_best_effort_on_bad_path(tmp_path):
+    # an unwritable path must not raise
+    bad = tmp_path / "afile"
+    bad.write_text("x")
+    srv.write_descriptor(path=bad / "nope" / "cad-agent.json")  # parent is a file

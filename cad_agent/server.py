@@ -31,6 +31,20 @@ def _write_handoff(workdir: Path) -> None:
         pass
 
 
+def write_descriptor(host: str = "127.0.0.1", port: int = 8099,
+                     path: "Path | None" = None) -> None:
+    # Service descriptor for AgentOS http-service (json) skills to find this app.
+    # Best-effort: a write failure must never crash the server.
+    target = path or (Path.home() / ".mori" / "cad-agent.json")
+    desc = {"contract_version": 1, "host": host, "port": port,
+            "inference_path": "/agentos/build"}
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(json.dumps(desc))
+    except OSError:
+        pass
+
+
 @app.get("/", response_class=HTMLResponse)
 def index() -> str:
     return (WEB / "index.html").read_text()
