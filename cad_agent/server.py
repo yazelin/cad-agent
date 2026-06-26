@@ -5,6 +5,7 @@ import uuid
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from pydantic import BaseModel
 from . import brain, runner
 
 app = FastAPI()
@@ -117,6 +118,23 @@ async def build(message: str = Form(""), image: UploadFile | None = File(None)) 
         gen_hint = (f"{message or 'the part'}\n\nThe previous attempt failed with:\n{result.stderr or 'timeout'}\nFix it.")
     await _emit({"type": "error", "stderr": result.stderr or "timeout"})
     return {"ok": False}
+
+
+class AgentosBuildReq(BaseModel):
+    message: str
+
+@app.post("/agentos/build")
+async def agentos_build(req: AgentosBuildReq) -> dict:
+    # headless one-shot for AgentOS: generate + build, return JSON. No SSE, no
+    # session state, no self-repair (the interactive /build keeps those).
+    script = await asyncio.to_thread(brain.generate, req.message, None)
+    result = await asyncio.to_thread(runner.run_freecad, script)
+    if result.ok:
+        return {"ok": True, "stl_path": str(result.stl_path),
+                "step_path": str(result.step_path) if result.step_path else None,
+                "script": script, "error": None}
+    return {"ok": False, "stl_path": None, "step_path": None, "script": script,
+            "error": (result.stderr or "build failed")[-500:]}
 
 
 @app.get("/events")
