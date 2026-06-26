@@ -1,8 +1,9 @@
 # cad-agent
 
-Describe a part in plain language; an AI writes a parametric FreeCAD script, runs
-it headless, and shows the resulting 3D model live in your browser. Say "make it
-longer" and it edits a parameter and rebuilds.
+Describe a part in plain language — **or upload a photo of a real one** — and an
+AI writes a parametric FreeCAD script, runs it headless, and shows the resulting
+3D model live in your browser. Say "make it longer" and it edits a parameter and
+rebuilds.
 
 This is the modeling stage of a two-tool pipeline: **FreeCAD builds the part**
 (manufacturable, parametric), and Blender renders the product image (a planned
@@ -26,6 +27,30 @@ The script keeps every dimension as an UPPERCASE variable at the top, so an edit
 When a build fails, the error is fed back to the model to self-repair (up to 2
 retries).
 
+## Photo to CAD
+
+Upload a photo of a physical part (optionally add a hint with a known dimension
+or note) and the model reverse-engineers it into a parametric FreeCAD script,
+then the same build / preview / edit loop takes over.
+
+- **Object selection works on cluttered photos.** Point at one item with a hint
+  ("the central hex nut", "the square plate with four corner holes at the
+  top-right") and it models that one. Verified: from a single photo of six mixed
+  fasteners, pointing at three different parts produced three correct, distinct
+  models — never the wrong one.
+- **Photo-aware iteration.** The session remembers the photo, so a later text
+  refinement ("make sure every arm has two holes") re-sees the part *and* the
+  previous script together. `重設` clears it; a new upload starts a fresh part.
+- A known dimension in the hint sets the scale; without one, proportions are
+  estimated.
+
+What it does well: primitive-decomposable mechanical parts — boxes, cylinders,
+hex prisms, holes, rounded ends, L-folds — reconstructed with correct structure.
+What it only approximates: exact dimensions without a hint, organic/freeform
+surfaces, threads, and gear teeth (a thread becomes a smooth cylinder). Single
+photo, so hidden faces are inferred. It is structural reverse-engineering, not a
+pixel-faithful copy.
+
 ## Requirements
 
 - Python 3.11+
@@ -46,7 +71,7 @@ pip install -e ".[dev]"                          # or: uv pip install -e ".[dev]
 
 ```bash
 python -m cad_agent
-# open http://127.0.0.1:8099, describe a part, click 建
+# open http://127.0.0.1:8099, describe a part (or upload a photo), click 建
 ```
 
 ## Configuration
@@ -65,8 +90,9 @@ FreeCAD has a private `/tmp` and its sandbox cannot read dotfiles, so neither
 The generated Python is run, so it is sandboxed lightly for personal single-user
 use: a per-run scratch directory as the working dir, a timeout, and a scrubbed
 environment (secrets are never passed to the FreeCAD subprocess). `claude -p`
-runs with file/shell tools disabled and in a throwaway directory so it cannot
-write to your repo. For multi-user or untrusted use, tighten this with
+runs with an allowlist of just the `Read` tool (so it can view an uploaded
+photo but cannot write files, run shells, or fetch the network) and in a
+throwaway directory. For multi-user or untrusted use, tighten this with
 bubblewrap (`--net=none`, restricted filesystem).
 
 ## Tests
