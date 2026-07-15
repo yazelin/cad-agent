@@ -1,107 +1,55 @@
 <!doctype html>
+<html lang="zh-Hant">
 <meta charset="utf-8">
-<title>cad-agent</title>
-<style>
-  body { margin: 0; display: flex; height: 100vh; font-family: system-ui; }
-  #view { flex: 1; background: #1a1a1a; }
-  #side { width: 360px; display: flex; flex-direction: column; border-left: 1px solid #ccc; }
-  #log { flex: 1; overflow: auto; padding: 8px; font: 12px/1.4 monospace; white-space: pre-wrap; }
-  #row { display: flex; padding: 8px; gap: 6px; }
-  #msg { flex: 1; }
-</style>
-<div id="view"></div>
-<div id="side">
-  <div id="log"></div>
-  <div id="row">
-    <input type="file" id="photo" accept="image/*" style="flex:1" title="拍照/上傳實物照,AI 逆向建模">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cad-agent — 用一句話建 3D 零件</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='%2358b7e6' stroke-width='1.6' d='M12 2 21 7v10l-9 5-9-5V7z M12 2v20 M3 7l9 5 9-5'/></svg>">
+<link rel="stylesheet" href="/web/style.css">
+<body>
+<main id="view"></main>
+<aside id="side">
+  <header id="brand">
+    <span id="brand-name">cad-agent</span>
+    <span id="status" class="idle">待命</span>
+  </header>
+  <div id="examples">
+    <div class="hint">描述一個零件,AI 會寫參數化 FreeCAD 腳本,即時建給你看。</div>
+    <div class="hint">試試:</div>
+    <button class="chip">M8 六角螺帽</button>
+    <button class="chip">100x60x5 mm 四孔安裝板</button>
+    <button class="chip">L 型支架,兩臂各兩孔</button>
   </div>
-  <div id="row">
-    <span id="basephoto" style="flex:1; font:12px monospace; color:#888"></span>
-    <button id="reset" title="清除基準照片與目前模型,從頭開始">重設</button>
+  <section id="log" aria-live="polite"></section>
+  <section id="params" hidden>
+    <div class="sec-head"><span>參數 <span class="en">DIMENSIONS</span></span><button id="rebuild" class="btn small" disabled>重建</button></div>
+    <div id="param-rows"></div>
+  </section>
+  <section id="history" hidden>
+    <div class="sec-head"><span>歷史 <span class="en">REVISIONS</span></span></div>
+    <div id="history-rows"></div>
+  </section>
+  <div id="actions">
+    <a id="dl-stl" class="btn" href="/stl" download hidden>下載 STL</a>
+    <a id="dl-step" class="btn" href="/step" download hidden>下載 STEP</a>
+    <button id="to-render" class="btn" hidden title="用 render-studio 渲染最近建好的模型">送去渲染</button>
   </div>
-  <div id="row">
-    <input id="msg" placeholder="描述,或上傳照片後在此補充尺寸/備註">
-    <button id="go">建</button>
+  <div id="photoline" hidden></div>
+  <div id="composer">
+    <label class="btn" id="photo-btn" title="拍照/上傳實物照,AI 逆向建模">照片<input type="file" id="photo" accept="image/*" hidden></label>
+    <input id="msg" placeholder="描述零件,或補充尺寸備註" autocomplete="off">
+    <button id="go" class="btn primary">建</button>
+    <button id="reset" class="btn" title="清除照片與目前模型,從頭開始">重設</button>
   </div>
-  <div id="row">
-    <button id="toRender" style="flex:1" title="用 render-studio 渲染最近建好的模型">送去 render-studio 渲染</button>
-  </div>
-</div>
+  <footer id="links">
+    <a href="https://github.com/yazelin/cad-agent" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://www.facebook.com/yaze.lin.gm" target="_blank" rel="noopener">Facebook</a>
+    <a href="https://buymeacoffee.com/yazelin" target="_blank" rel="noopener">Buy Me a Coffee</a>
+  </footer>
+</aside>
 <script type="importmap">
 { "imports": {
   "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
   "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
 }}
 </script>
-<script type="module">
-import * as THREE from "three";
-import { STLLoader } from "three/addons/loaders/STLLoader.js";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-
-const view = document.getElementById("view");
-const scene = new THREE.Scene();
-const cam = new THREE.PerspectiveCamera(50, view.clientWidth / view.clientHeight, 0.1, 5000);
-cam.position.set(120, 120, 120);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(view.clientWidth, view.clientHeight);
-view.appendChild(renderer.domElement);
-const controls = new OrbitControls(cam, renderer.domElement);
-scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1.2));
-const dir = new THREE.DirectionalLight(0xffffff, 1); dir.position.set(1, 1, 1); scene.add(dir);
-scene.add(new THREE.GridHelper(200, 20));
-let mesh = null;
-(function loop(){ requestAnimationFrame(loop); controls.update(); renderer.render(scene, cam); })();
-
-const loader = new STLLoader();
-function loadStl(url){
-  loader.load(url + "?t=" + Date.now(), geo => {
-    if (mesh) scene.remove(mesh);
-    geo.center();
-    mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x66aaff, metalness: 0.1, roughness: 0.6 }));
-    scene.add(mesh);
-  });
-}
-
-const log = document.getElementById("log");
-function line(t){ log.textContent += t + "\n"; log.scrollTop = log.scrollHeight; }
-
-const es = new EventSource("/events");
-es.onmessage = e => {
-  const ev = JSON.parse(e.data);
-  if (ev.type === "script") line("--- script ---\n" + ev.script);
-  else if (ev.type === "model") loadStl(ev.stl);
-  else if (ev.type === "error") line("[error] " + ev.stderr);
-};
-
-async function send(){
-  const msg = document.getElementById("msg").value.trim();
-  const photo = document.getElementById("photo").files[0];
-  if (!msg && !photo) { line("describe a part or pick a photo"); return; }
-  line(photo ? ("> [photo] " + (msg || "")) : ("> " + msg));
-  const fd = new FormData();
-  fd.append("message", msg);
-  if (photo) fd.append("image", photo);
-  await fetch("/build", { method: "POST", body: fd });
-  refreshSession();
-}
-document.getElementById("go").onclick = send;
-document.getElementById("msg").addEventListener("keydown", e => { if (e.key === "Enter") send(); });
-// open render-studio; it loads the latest built model from the shared handoff
-document.getElementById("toRender").onclick = () =>
-  window.open("http://127.0.0.1:8098/?from=cad-agent", "_blank");
-async function refreshSession(){
-  try {
-    const s = await (await fetch("/session")).json();
-    document.getElementById("basephoto").textContent =
-      s.image ? ("基準照片:" + s.image + "(換照片或重設清除)") : "";
-  } catch (e) { /* ignore */ }
-}
-document.getElementById("reset").onclick = async () => {
-  await fetch("/reset", { method: "POST" });
-  document.getElementById("photo").value = "";
-  document.getElementById("msg").value = "";
-  refreshSession();
-  line("已重設,從頭開始");
-};
-refreshSession();
-</script>
+<script type="module" src="/web/app.js"></script>

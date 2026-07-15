@@ -9,12 +9,14 @@ from pathlib import Path
 
 
 @pytest.fixture(autouse=True)
-def _reset_state():
+def _reset_state(monkeypatch, tmp_path):
     srv._state.clear()
     srv._state.update({"prev_script": None, "last_workdir": None, "last_image": None})
     srv._busy = False
     srv._clients.clear()
     srv._history.clear()
+    # keep _save_photo from leaking photo-* dirs into the real ~/cad-agent-scratch
+    monkeypatch.setattr(srv.runner, "DEFAULT_SCRATCH", tmp_path / "scratch")
     yield
 
 
@@ -22,6 +24,11 @@ def test_index_serves_html():
     r = TestClient(app).get("/")
     assert r.status_code == 200
     assert "cad-agent" in r.text
+
+
+def test_web_static_served():
+    assert TestClient(app).get("/web/style.css").status_code == 200
+    assert TestClient(app).get("/web/app.js").status_code == 200
 
 def test_build_success_sets_prev_and_returns_ok(tmp_path, monkeypatch):
     stl = tmp_path / "out.stl"; stl.write_text("solid x\nendsolid x\n")

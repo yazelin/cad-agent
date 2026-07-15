@@ -6,11 +6,13 @@ import uuid
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from . import brain, params, runner
 
 app = FastAPI()
 WEB = Path(__file__).parent / "web"
+app.mount("/web", StaticFiles(directory=WEB), name="web")
 
 _state: dict = {"prev_script": None, "last_workdir": None, "last_image": None}
 _clients: "set[asyncio.Queue[dict]]" = set()
