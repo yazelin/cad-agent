@@ -156,6 +156,52 @@ def test_stl_returns_404_when_no_build(monkeypatch):
     r = TestClient(app).get("/stl")
     assert r.status_code == 404
 
+def test_rebuild_substitutes_and_runs_without_claude(tmp_path, monkeypatch):
+    ok = _ok_result(tmp_path)
+    seen = {}
+    def run(script, **k):
+        seen["script"] = script
+        return ok
+    monkeypatch.setattr(srv.runner, "run_freecad", run)
+    monkeypatch.setattr(srv.brain, "generate",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("claude must not be called")))
+    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
+    srv._state["prev_script"] = "W = 10\nH = 5"
+    r = TestClient(app).post("/rebuild", json={"params": {"W": 12.5}})
+    assert r.json() == {"ok": True}
+    assert seen["script"].splitlines()[0] == "W = 12.5"
+    assert srv._state["prev_script"].splitlines()[0] == "W = 12.5"
+    h = TestClient(app).get("/history").json()
+    assert h and h[-1]["label"] == "參數 W=12.5"
+
+
+def test_rebuild_failure_keeps_old_script(tmp_path, monkeypatch):
+    monkeypatch.setattr(srv.runner, "run_freecad",
+        lambda s, **k: RunResult(False, False, "", "boom", None, None, tmp_path))
+    srv._state["prev_script"] = "W = 10"
+    r = TestClient(app).post("/rebuild", json={"params": {"W": 99}})
+    assert r.json() == {"ok": False}
+    assert srv._state["prev_script"] == "W = 10"
+
+
+def test_rebuild_400_without_script():
+    assert TestClient(app).post("/rebuild", json={"params": {"W": 1}}).status_code == 400
+
+
+def test_rebuild_409_while_busy():
+    srv._state["prev_script"] = "W = 1"
+    srv._busy = True
+    assert TestClient(app).post("/rebuild", json={"params": {"W": 2}}).status_code == 409
+
+
+def test_session_reports_params_and_model_flag(tmp_path):
+    srv._state["prev_script"] = "W = 10"
+    srv._state["last_workdir"] = tmp_path
+    s = TestClient(app).get("/session").json()
+    assert s["params"] == [{"name": "W", "value": 10.0}]
+    assert s["has_model"] is True and s["image"] is None
+
+
 def test_history_records_each_successful_build(tmp_path, monkeypatch):
     ok = _ok_result(tmp_path)
     monkeypatch.setattr(srv.brain, "generate", lambda m, p=None: "W = 1")
@@ -322,10 +368,10 @@ def test_reset_clears_session(tmp_path, monkeypatch):
 
 def test_session_reports_image_name(tmp_path):
     srv._state["last_image"] = None
-    assert TestClient(app).get("/session").json() == {"image": None}
+    assert TestClient(app).get("/session").json()["image"] is None
     p = tmp_path / "photo.png"; p.write_bytes(b"x")
     srv._state["last_image"] = str(p)
-    assert TestClient(app).get("/session").json() == {"image": "photo.png"}
+    assert TestClient(app).get("/session").json()["image"] == "photo.png"
 
 
 def test_missing_remembered_file_falls_back_to_text(tmp_path, monkeypatch):

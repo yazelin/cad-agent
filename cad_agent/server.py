@@ -122,7 +122,46 @@ def reset() -> dict:
 @app.get("/session")
 def session() -> dict:
     img = _state.get("last_image")
-    return {"image": Path(img).name if img else None}
+    script = _state.get("prev_script")
+    return {"image": Path(img).name if img else None,
+            "params": params.parse_params(script) if script else [],
+            "has_model": _state.get("last_workdir") is not None}
+
+
+class RebuildReq(BaseModel):
+    params: dict[str, float]
+
+
+@app.post("/rebuild")
+async def rebuild(req: RebuildReq) -> dict:
+    global _busy
+    if _busy:
+        raise HTTPException(status_code=409, detail="build in progress")
+    if not _state["prev_script"]:
+        raise HTTPException(status_code=400, detail="no script to rebuild yet")
+    try:
+        script = params.substitute(_state["prev_script"], req.params)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _busy = True
+    try:
+        await _emit({"type": "status", "stage": "building", "attempt": 0})
+        result = await asyncio.to_thread(runner.run_freecad, script)
+        if result.ok:
+            _state["prev_script"] = script
+            _state["last_workdir"] = result.workdir
+            _write_handoff(result.workdir)
+            label = "參數 " + ", ".join(
+                f"{k}={v:g}" for k, v in sorted(req.params.items()))
+            entry = _record_history(script, result.workdir, label)
+            await _emit({"type": "model", "stl": "/stl",
+                         "params": params.parse_params(script),
+                         "history_id": entry["id"], "label": entry["label"]})
+            return {"ok": True}
+        await _emit({"type": "error", "stderr": result.stderr or "timeout"})
+        return {"ok": False}
+    finally:
+        _busy = False
 
 
 async def _emit(ev: dict) -> None:
