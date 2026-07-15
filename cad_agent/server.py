@@ -1,6 +1,7 @@
 import asyncio
 import json
 import shutil
+import time
 import uuid
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
@@ -14,6 +15,8 @@ WEB = Path(__file__).parent / "web"
 _state: dict = {"prev_script": None, "last_workdir": None, "last_image": None}
 _clients: "set[asyncio.Queue[dict]]" = set()
 _busy = False  # ponytail: one build at a time, module-level flag; queue builds if it ever hurts
+# ponytail: history is in-memory, gone on restart; persist to scratch JSON if that ever matters
+_history: list[dict] = []
 MAX_RETRIES = 2
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -44,6 +47,45 @@ def write_descriptor(host: str = "127.0.0.1", port: int = 8099,
         target.write_text(json.dumps(desc))
     except OSError:
         pass
+
+
+def _record_history(script: str, workdir: Path, label: str) -> dict:
+    entry = {"id": len(_history) + 1, "script": script, "workdir": str(workdir),
+             "label": (label.strip() or "未命名")[:60], "ts": time.time()}
+    _history.append(entry)
+    return entry
+
+
+def _history_entry(hid: int) -> dict:
+    for e in _history:
+        if e["id"] == hid:
+            return e
+    raise HTTPException(status_code=404, detail="no such history entry")
+
+
+@app.get("/history")
+def history() -> list[dict]:
+    return [{"id": e["id"], "label": e["label"], "ts": e["ts"]} for e in _history]
+
+
+@app.get("/history/{hid}/stl")
+def history_stl(hid: int) -> FileResponse:
+    e = _history_entry(hid)
+    path = Path(e["workdir"]) / "out.stl"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="stl file no longer on disk")
+    return FileResponse(path, media_type="model/stl", filename="cad-agent.stl")
+
+
+@app.post("/history/{hid}/restore")
+async def history_restore(hid: int) -> dict:
+    e = _history_entry(hid)
+    _state["prev_script"] = e["script"]
+    _state["last_workdir"] = Path(e["workdir"])
+    await _emit({"type": "model", "stl": "/stl",
+                 "params": params.parse_params(e["script"]),
+                 "history_id": e["id"], "label": e["label"]})
+    return {"ok": True}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -150,8 +192,12 @@ async def build(message: str = Form(""), image: UploadFile | None = File(None)) 
                 _state["prev_script"] = script
                 _state["last_workdir"] = result.workdir
                 _write_handoff(result.workdir)
+                entry = _record_history(
+                    script, result.workdir,
+                    message or ("照片建模" if active_image else "建置"))
                 await _emit({"type": "model", "stl": "/stl",
-                             "params": params.parse_params(script)})
+                             "params": params.parse_params(script),
+                             "history_id": entry["id"], "label": entry["label"]})
                 return {"ok": True}
             prev_for_this_iter = script
             gen_hint = (f"{message or 'the part'}\n\nThe previous attempt failed with:\n{result.stderr or 'timeout'}\nFix it.")

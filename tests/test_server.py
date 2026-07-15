@@ -14,6 +14,7 @@ def _reset_state():
     srv._state.update({"prev_script": None, "last_workdir": None, "last_image": None})
     srv._busy = False
     srv._clients.clear()
+    srv._history.clear()
     yield
 
 
@@ -154,6 +155,51 @@ def test_stl_returns_404_when_no_build(monkeypatch):
     srv._state["last_workdir"] = None
     r = TestClient(app).get("/stl")
     assert r.status_code == 404
+
+def test_history_records_each_successful_build(tmp_path, monkeypatch):
+    ok = _ok_result(tmp_path)
+    monkeypatch.setattr(srv.brain, "generate", lambda m, p=None: "W = 1")
+    monkeypatch.setattr(srv.runner, "run_freecad", lambda s, **k: ok)
+    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
+    c = TestClient(app)
+    c.post("/build", data={"message": "第一版底板"})
+    c.post("/build", data={"message": "加四個孔"})
+    h = c.get("/history").json()
+    assert [(e["id"], e["label"]) for e in h] == [(1, "第一版底板"), (2, "加四個孔")]
+    assert all(set(e) == {"id", "label", "ts"} for e in h)
+
+
+def test_history_restore_switches_state_and_emits_model(tmp_path, monkeypatch):
+    ok = _ok_result(tmp_path)
+    scripts = iter(["A = 1", "A = 2"])
+    monkeypatch.setattr(srv.brain, "generate", lambda m, p=None: next(scripts))
+    monkeypatch.setattr(srv.runner, "run_freecad", lambda s, **k: ok)
+    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
+    c = TestClient(app)
+    c.post("/build", data={"message": "v1"})
+    c.post("/build", data={"message": "v2"})
+    events = []
+    async def record(ev): events.append(ev)
+    monkeypatch.setattr(srv, "_emit", record)
+    assert c.post("/history/1/restore").json() == {"ok": True}
+    assert srv._state["prev_script"] == "A = 1"
+    assert events[-1]["type"] == "model" and events[-1]["history_id"] == 1
+
+
+def test_history_stl_serves_that_versions_file(tmp_path, monkeypatch):
+    ok = _ok_result(tmp_path)
+    monkeypatch.setattr(srv.brain, "generate", lambda m, p=None: "W = 1")
+    monkeypatch.setattr(srv.runner, "run_freecad", lambda s, **k: ok)
+    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
+    c = TestClient(app)
+    c.post("/build", data={"message": "v1"})
+    assert c.get("/history/1/stl").status_code == 200
+    assert c.get("/history/99/stl").status_code == 404
+
+
+def test_history_restore_unknown_id_404():
+    assert TestClient(app).post("/history/7/restore").status_code == 404
+
 
 def test_step_404_when_no_build():
     srv._state["last_workdir"] = None
