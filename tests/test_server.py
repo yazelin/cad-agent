@@ -155,6 +155,30 @@ def test_stl_returns_404_when_no_build(monkeypatch):
     r = TestClient(app).get("/stl")
     assert r.status_code == 404
 
+def test_step_404_when_no_build():
+    srv._state["last_workdir"] = None
+    assert TestClient(app).get("/step").status_code == 404
+
+
+def test_step_404_when_step_file_missing(tmp_path):
+    srv._state["last_workdir"] = tmp_path
+    assert TestClient(app).get("/step").status_code == 404
+
+
+def test_step_serves_file_with_download_filename(tmp_path):
+    (tmp_path / "out.step").write_text("ISO-10303-21;")
+    srv._state["last_workdir"] = tmp_path
+    r = TestClient(app).get("/step")
+    assert r.status_code == 200
+    assert "cad-agent.step" in r.headers["content-disposition"]
+
+
+def test_stl_download_filename(tmp_path):
+    (tmp_path / "out.stl").write_text("solid x\nendsolid x\n")
+    srv._state["last_workdir"] = tmp_path
+    assert "cad-agent.stl" in TestClient(app).get("/stl").headers["content-disposition"]
+
+
 def test_build_from_photo_routes_to_vision(tmp_path, monkeypatch):
     stl = tmp_path / "out.stl"; stl.write_text("solid x\nendsolid x\n")
     seen = {}

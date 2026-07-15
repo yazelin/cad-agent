@@ -55,7 +55,18 @@ def index() -> str:
 def stl() -> FileResponse:
     if _state["last_workdir"] is None:
         raise HTTPException(status_code=404, detail="no successful build yet")
-    return FileResponse(_state["last_workdir"] / "out.stl", media_type="model/stl")
+    return FileResponse(_state["last_workdir"] / "out.stl",
+                        media_type="model/stl", filename="cad-agent.stl")
+
+
+@app.get("/step")
+def step() -> FileResponse:
+    if _state["last_workdir"] is None:
+        raise HTTPException(status_code=404, detail="no successful build yet")
+    path = _state["last_workdir"] / "out.step"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="no step file for this build")
+    return FileResponse(path, media_type="application/step", filename="cad-agent.step")
 
 
 @app.post("/reset")
