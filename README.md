@@ -1,13 +1,41 @@
 # cad-agent
 
-Describe a part in plain language — **or upload a photo of a real one** — and an
-AI writes a parametric FreeCAD script, runs it headless, and shows the resulting
-3D model live in your browser. Say "make it longer" and it edits a parameter and
-rebuilds.
+**Describe a part in plain language — or upload a photo of a real one — and
+watch AI build it into a parametric CAD model, live.**
+
+![demo](docs/media/demo.gif)
+
+[![ci](https://github.com/yazelin/cad-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/yazelin/cad-agent/actions/workflows/ci.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![python](https://img.shields.io/badge/python-3.11%2B-blue)
+
+> 正體中文導讀:用一句話(或一張實物照片)描述零件,AI 寫出參數化 FreeCAD
+> 腳本、無頭建置,瀏覽器即時看 3D 結果。尺寸都是腳本頂端的大寫變數——在參數
+> 面板直接改數字,幾秒重建,不用再等 AI。可下載 STL/STEP,建置歷史能回到任一
+> 版本繼續改。這是給我自己用的工具,也是「AI 寫 CAD」跑得起來的示範。
+
+An AI writes a parametric FreeCAD script, runs it headless, and shows the
+resulting 3D model live in your browser. Say "make it longer" and it edits a
+parameter and rebuilds.
 
 This is the modeling stage of a two-tool pipeline: **FreeCAD builds the part**
-(manufacturable, parametric), and Blender renders the product image (a planned
-follow-up). cad-agent runs fully standalone.
+(manufacturable, parametric), and Blender renders the product image (see
+[render-studio](https://github.com/yazelin/render-studio)). cad-agent runs
+fully standalone.
+
+## Features
+
+- **Live progress** — thinking / building / self-repair stages stream to the
+  browser as they happen; no more staring at a frozen button.
+- **Parameter panel** — every dimension the AI writes becomes an editable
+  field. Change a number and FreeCAD rebuilds in seconds, no AI round-trip.
+- **STL / STEP downloads** — the output of a CAD tool is the file.
+- **Build history** — every successful build is a revision (R1, R2, …);
+  restore any earlier one and continue from it.
+- **Photo to CAD** — photograph a real part, get a parametric reconstruction.
+- **Self-repair** — build errors are fed back to the model (up to 2 retries).
+
+![the app after a build: model on the work plane, parameter panel, revisions](docs/media/hero.png)
 
 ## How it works
 
@@ -32,6 +60,8 @@ retries).
 Upload a photo of a physical part (optionally add a hint with a known dimension
 or note) and the model reverse-engineers it into a parametric FreeCAD script,
 then the same build / preview / edit loop takes over.
+
+![a photographed L-bracket reverse-engineered into a parametric model](docs/media/photo-to-cad.png)
 
 - **Object selection works on cluttered photos.** Point at one item with a hint
   ("the central hex nut", "the square plate with four corner holes at the
@@ -101,6 +131,12 @@ bubblewrap (`--net=none`, restricted filesystem).
 pytest            # unit tests run anywhere; the real end-to-end
                   # acceptance test auto-skips when FreeCAD is absent
 ```
+
+## 作者與支持
+
+- 原始碼 GitHub:<https://github.com/yazelin/cad-agent>
+- Facebook:<https://www.facebook.com/yaze.lin.gm>
+- Buy Me a Coffee:<https://buymeacoffee.com/yazelin>
 
 ## License
 
