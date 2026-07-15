@@ -35,9 +35,17 @@ function loadStl(url) {
   loader.load(url + "?t=" + Date.now(), (geo) => {
     clearModel();
     geo.center();
+    geo.rotateX(-Math.PI / 2); // FreeCAD 是 Z-up,three.js 是 Y-up:讓零件躺在工作平面
+    geo.computeBoundingBox();
+    const bb = geo.boundingBox;
     mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
       color: 0x9fb6d4, metalness: 0.15, roughness: 0.5 }));
+    mesh.position.y = -bb.min.y; // 貼地
     scene.add(mesh);
+    const radius = bb.getSize(new THREE.Vector3()).length() / 2;
+    const dist = Math.max(60, radius * 2.6);
+    cam.position.normalize().multiplyScalar(dist); // 保留視角方向,依零件大小取景
+    controls.target.set(0, -bb.min.y, 0);
   }, undefined, () => {});
 }
 function clearModel() {
