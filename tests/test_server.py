@@ -1,3 +1,4 @@
+import asyncio
 import io
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +12,8 @@ from pathlib import Path
 def _reset_state():
     srv._state.clear()
     srv._state.update({"prev_script": None, "last_workdir": None, "last_image": None})
+    srv._busy = False
+    srv._clients.clear()
     yield
 
 
@@ -85,6 +88,66 @@ def test_build_retry_feeds_failed_script_as_prev(tmp_path, monkeypatch):
     assert prev_args[2] == generated[1], (
         f"3rd call got prev={prev_args[2]!r}, want {generated[1]!r}"
     )
+
+def _ok_result(tmp_path):
+    stl = tmp_path / "out.stl"; stl.write_text("solid x\nendsolid x\n")
+    return RunResult(True, False, "", "", stl, None, tmp_path)
+
+
+def test_emit_fans_out_to_all_clients():
+    async def go():
+        q1, q2 = asyncio.Queue(), asyncio.Queue()
+        srv._clients.update({q1, q2})
+        await srv._emit({"type": "x"})
+        assert q1.get_nowait() == {"type": "x"}
+        assert q2.get_nowait() == {"type": "x"}
+    asyncio.run(go())
+
+
+def test_build_emits_status_script_model_sequence(tmp_path, monkeypatch):
+    ok = _ok_result(tmp_path)
+    events = []
+    async def record(ev): events.append(ev)
+    monkeypatch.setattr(srv, "_emit", record)
+    monkeypatch.setattr(srv.brain, "generate",
+        lambda m, p=None: "W = 10\nshape.exportStl('out.stl')")
+    monkeypatch.setattr(srv.runner, "run_freecad", lambda s, **k: ok)
+    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
+    TestClient(app).post("/build", data={"message": "a plate"})
+    seq = [(e["type"], e.get("stage")) for e in events]
+    assert seq == [("status", "thinking"), ("script", None),
+                   ("status", "building"), ("model", None)]
+    assert events[-1]["params"] == [{"name": "W", "value": 10.0}]
+
+
+def test_build_emits_retry_stage(tmp_path, monkeypatch):
+    ok = _ok_result(tmp_path)
+    calls = {"n": 0}
+    def run(script, **k):
+        calls["n"] += 1
+        return RunResult(False, False, "", "boom", None, None, tmp_path) if calls["n"] == 1 else ok
+    events = []
+    async def record(ev): events.append(ev)
+    monkeypatch.setattr(srv, "_emit", record)
+    monkeypatch.setattr(srv.brain, "generate", lambda m, p=None: "W = 1")
+    monkeypatch.setattr(srv.runner, "run_freecad", run)
+    monkeypatch.setattr(srv, "_write_handoff", lambda wd: None)
+    TestClient(app).post("/build", data={"message": "x"})
+    assert {"type": "status", "stage": "retry", "attempt": 1} in events
+
+
+def test_build_returns_409_while_busy():
+    srv._busy = True
+    assert TestClient(app).post("/build", data={"message": "x"}).status_code == 409
+
+
+def test_build_clears_busy_after_run(tmp_path, monkeypatch):
+    monkeypatch.setattr(srv.brain, "generate", lambda m, p=None: "W = 1")
+    monkeypatch.setattr(srv.runner, "run_freecad",
+        lambda s, **k: RunResult(False, False, "", "boom", None, None, tmp_path))
+    TestClient(app).post("/build", data={"message": "x"})
+    assert srv._busy is False
+
 
 def test_stl_returns_404_when_no_build(monkeypatch):
     """I2: GET /stl must return 404 when no successful build has completed."""

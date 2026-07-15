@@ -6,13 +6,14 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from pydantic import BaseModel
-from . import brain, runner
+from . import brain, params, runner
 
 app = FastAPI()
 WEB = Path(__file__).parent / "web"
 
 _state: dict = {"prev_script": None, "last_workdir": None, "last_image": None}
-_events: "asyncio.Queue[dict]" = asyncio.Queue()
+_clients: "set[asyncio.Queue[dict]]" = set()
+_busy = False  # ponytail: one build at a time, module-level flag; queue builds if it ever hurts
 MAX_RETRIES = 2
 MAX_IMAGE_BYTES = 25 * 1024 * 1024
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -72,7 +73,10 @@ def session() -> dict:
 
 
 async def _emit(ev: dict) -> None:
-    await _events.put(ev)
+    # fan out to every connected tab; a lone asyncio.Queue would make two
+    # EventSource connections steal events from each other
+    for q in list(_clients):
+        await q.put(ev)
 
 
 def _clear_last_image() -> None:
@@ -98,6 +102,9 @@ async def _save_photo(image: UploadFile) -> Path:
 
 @app.post("/build")
 async def build(message: str = Form(""), image: UploadFile | None = File(None)) -> dict:
+    global _busy
+    if _busy:
+        raise HTTPException(status_code=409, detail="build in progress")
     if not message.strip() and image is None and _state["last_image"] is None:
         raise HTTPException(status_code=400, detail="describe a part or upload a photo")
     if image is not None:
@@ -105,33 +112,42 @@ async def build(message: str = Form(""), image: UploadFile | None = File(None)) 
         _clear_last_image()                        # only clear AFTER save succeeds
         _state["last_image"] = new_path
         _state["prev_script"] = None              # fresh part — do not anchor on old script
-    active_image = _state["last_image"]
-    if active_image and not Path(active_image).exists():
-        active_image = None
-        _state["last_image"] = None
+    _busy = True
+    try:
+        active_image = _state["last_image"]
+        if active_image and not Path(active_image).exists():
+            active_image = None
+            _state["last_image"] = None
 
-    result = None
-    prev_for_this_iter = _state["prev_script"]
-    gen_hint = message or None
-    for attempt in range(MAX_RETRIES + 1):
-        if active_image is not None:
-            script = await asyncio.to_thread(
-                brain.generate_from_photo, active_image, gen_hint, prev_for_this_iter)
-        else:
-            script = await asyncio.to_thread(
-                brain.generate, gen_hint or message, prev_for_this_iter)
-        await _emit({"type": "script", "script": script})
-        result = await asyncio.to_thread(runner.run_freecad, script)
-        if result.ok:
-            _state["prev_script"] = script
-            _state["last_workdir"] = result.workdir
-            _write_handoff(result.workdir)
-            await _emit({"type": "model", "stl": "/stl"})
-            return {"ok": True}
-        prev_for_this_iter = script
-        gen_hint = (f"{message or 'the part'}\n\nThe previous attempt failed with:\n{result.stderr or 'timeout'}\nFix it.")
-    await _emit({"type": "error", "stderr": result.stderr or "timeout"})
-    return {"ok": False}
+        result = None
+        prev_for_this_iter = _state["prev_script"]
+        gen_hint = message or None
+        for attempt in range(MAX_RETRIES + 1):
+            await _emit({"type": "status",
+                         "stage": "retry" if attempt else "thinking",
+                         "attempt": attempt})
+            if active_image is not None:
+                script = await asyncio.to_thread(
+                    brain.generate_from_photo, active_image, gen_hint, prev_for_this_iter)
+            else:
+                script = await asyncio.to_thread(
+                    brain.generate, gen_hint or message, prev_for_this_iter)
+            await _emit({"type": "script", "script": script})
+            await _emit({"type": "status", "stage": "building", "attempt": attempt})
+            result = await asyncio.to_thread(runner.run_freecad, script)
+            if result.ok:
+                _state["prev_script"] = script
+                _state["last_workdir"] = result.workdir
+                _write_handoff(result.workdir)
+                await _emit({"type": "model", "stl": "/stl",
+                             "params": params.parse_params(script)})
+                return {"ok": True}
+            prev_for_this_iter = script
+            gen_hint = (f"{message or 'the part'}\n\nThe previous attempt failed with:\n{result.stderr or 'timeout'}\nFix it.")
+        await _emit({"type": "error", "stderr": result.stderr or "timeout"})
+        return {"ok": False}
+    finally:
+        _busy = False
 
 
 class AgentosBuildReq(BaseModel):
@@ -153,8 +169,15 @@ async def agentos_build(req: AgentosBuildReq) -> dict:
 
 @app.get("/events")
 async def events() -> StreamingResponse:
+    q: "asyncio.Queue[dict]" = asyncio.Queue()
+    _clients.add(q)
+
     async def gen():
-        while True:
-            ev = await _events.get()
-            yield f"data: {json.dumps(ev)}\n\n"
+        try:
+            while True:
+                ev = await q.get()
+                yield f"data: {json.dumps(ev)}\n\n"
+        finally:
+            _clients.discard(q)
+
     return StreamingResponse(gen(), media_type="text/event-stream")
