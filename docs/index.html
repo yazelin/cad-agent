@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cad-agent — 用一句話建 3D 零件</title>
+<meta name="description" content="描述零件或拍張照，AI 寫參數化 FreeCAD 腳本，瀏覽器即時看 3D 結果。改參數秒級重建，可下載 STL/STEP。">
+<meta property="og:title" content="cad-agent — 用一句話建 3D 零件">
+<meta property="og:description" content="描述零件或拍張照，AI 寫參數化 FreeCAD 腳本，瀏覽器即時看 3D 結果。改參數秒級重建，可下載 STL/STEP。">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://yazelin.github.io/cad-agent/">
+<meta property="og:image" content="https://cdn.jsdelivr.net/gh/yazelin/cad-agent@main/docs/media/hero.png">
+<meta property="og:image:width" content="1440">
+<meta property="og:image:height" content="900">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path fill='none' stroke='%2358b7e6' stroke-width='1.6' d='M12 2 21 7v10l-9 5-9-5V7z M12 2v20 M3 7l9 5 9-5'/></svg>">
+<style>
+:root {
+  --bg: #0f151d; --panel: #121a24; --line: #263140; --line-soft: #1b2431;
+  --text: #dce5ee; --muted: #8a93a6; --accent: #58b7e6; --accent-ink: #0a1219;
+  --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "Noto Sans Mono", monospace;
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--bg); color: var(--text);
+       font: 16px/1.7 system-ui, "Noto Sans TC", sans-serif; }
+.wrap { max-width: 880px; margin: 0 auto; padding: 0 20px; }
+header { border-bottom: 1px solid var(--line); padding: 14px 0; }
+header .wrap { display: flex; align-items: center; justify-content: space-between; }
+.brand { font-family: var(--mono); font-weight: 650; letter-spacing: .06em; }
+.stamp { font: 11px/1 var(--mono); letter-spacing: .12em; padding: 5px 9px;
+         border: 1px solid var(--accent); border-radius: 2px; color: var(--accent); }
+.hero { padding: 56px 0 32px; text-align: center; }
+h1 { font-size: clamp(28px, 5vw, 44px); line-height: 1.25; letter-spacing: .01em; }
+h1 .en { display: block; font: 600 14px/1 var(--mono); letter-spacing: .3em;
+         color: var(--muted); margin-bottom: 14px; text-transform: uppercase; }
+.sub { color: var(--muted); max-width: 560px; margin: 18px auto 26px; }
+.cta { display: inline-block; padding: 10px 22px; border-radius: 2px; margin: 0 6px 10px;
+       text-decoration: none; font-size: 15px; border: 1px solid var(--line); color: var(--text); }
+.cta.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 650; }
+.cta:hover { border-color: var(--accent); }
+.frame { border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
+         background: var(--panel); margin: 26px 0; }
+.frame img { display: block; width: 100%; height: auto; }
+.sec-head { font-size: 12px; letter-spacing: .1em; color: var(--muted); margin: 48px 0 16px; }
+.sec-head .en { font-family: var(--mono); letter-spacing: .18em; opacity: .55; margin-left: 6px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.card { border: 1px solid var(--line-soft); border-radius: 4px; background: var(--panel); padding: 16px; }
+.card b { display: block; margin-bottom: 6px; color: var(--text); }
+.card p { color: var(--muted); font-size: 14px; }
+pre { background: #0b1119; border: 1px solid var(--line-soft); border-radius: 4px;
+      padding: 16px; overflow-x: auto; font: 13px/1.7 var(--mono); color: var(--text); }
+.note { color: var(--muted); font-size: 14px; margin-top: 10px; }
+footer { border-top: 1px solid var(--line); margin-top: 56px; padding: 20px 0 32px; }
+footer .wrap { display: flex; gap: 18px; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+footer a { color: var(--muted); text-decoration: none; }
+footer a:hover { color: var(--accent); }
+a:focus-visible, .cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <span class="brand">cad-agent</span>
+  <span class="stamp">v0.2.0</span>
+</div></header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1><span class="en">AI parametric CAD</span>用一句話，建出一個 3D 零件</h1>
+    <p class="sub">描述零件，或拍一張實物照，AI 寫出參數化 FreeCAD 腳本、無頭建置，瀏覽器即時看結果。尺寸就是參數：改數字，幾秒重建，不用再等 AI。</p>
+    <a class="cta primary" href="https://github.com/yazelin/cad-agent">GitHub 原始碼</a>
+    <a class="cta" href="#install">本機安裝</a>
+  </section>
+
+  <div class="frame"><img src="https://cdn.jsdelivr.net/gh/yazelin/cad-agent@main/docs/media/demo.gif" alt="cad-agent demo：描述、建置、改參數重建" loading="eager"></div>
+
+  <h2 class="sec-head">特色 <span class="en">FEATURES</span></h2>
+  <div class="grid">
+    <div class="card"><b>建置進度全程可見</b><p>AI 寫腳本中、FreeCAD 建置中、自我修復第 N 次，狀態即時串流到瀏覽器。</p></div>
+    <div class="card"><b>參數面板</b><p>AI 寫的每個尺寸都是可編輯欄位，改數字直接重跑 FreeCAD，不經 AI、秒級完成。</p></div>
+    <div class="card"><b>STL/STEP 下載</b><p>CAD 工具的產出就是檔案，建完直接拿去印或進 CAD 軟體。</p></div>
+    <div class="card"><b>建置歷史</b><p>每次成功建置是一個版次（R1、R2…），可回復任一版繼續改。</p></div>
+    <div class="card"><b>拍照逆向建模</b><p>上傳實物照片，AI 逆向出參數化模型；附一個已知尺寸就能定比例。</p></div>
+    <div class="card"><b>失敗自我修復</b><p>建置錯誤自動回灌給 AI 修正，最多重試兩次。</p></div>
+  </div>
+
+  <h2 class="sec-head">拍照到 CAD <span class="en">PHOTO TO CAD</span></h2>
+  <div class="frame"><img src="https://cdn.jsdelivr.net/gh/yazelin/cad-agent@main/docs/media/photo-to-cad.png" alt="實物照片逆向成參數化 L 型支架" loading="lazy"></div>
+
+  <h2 class="sec-head" id="install">本機安裝 <span class="en">INSTALL</span></h2>
+  <pre>git clone https://github.com/yazelin/cad-agent && cd cad-agent
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+python -m cad_agent   # 開 http://127.0.0.1:8099</pre>
+  <p class="note">需要：Python 3.11+、FreeCAD(headless)、已登入的 claude CLI（用你的訂閱，不走 API 計費）。這是在你自己機器上跑的工具，這一頁只是展示。</p>
+</main>
+
+<footer><div class="wrap">
+  <a href="https://github.com/yazelin/cad-agent">GitHub</a>
+  <a href="https://www.facebook.com/yaze.lin.gm">Facebook</a>
+  <a href="https://buymeacoffee.com/yazelin">Buy Me a Coffee</a>
+  <span>MIT (c) 林亞澤</span>
+</div></footer>
+</body>
+</html>
