@@ -35,7 +35,7 @@ function loadStl(url) {
   loader.load(url + "?t=" + Date.now(), (geo) => {
     clearModel();
     geo.center();
-    geo.rotateX(-Math.PI / 2); // FreeCAD 是 Z-up,three.js 是 Y-up:讓零件躺在工作平面
+    geo.rotateX(-Math.PI / 2); // FreeCAD 是 Z-up,three.js 是 Y-up：讓零件躺在工作平面
     geo.computeBoundingBox();
     const bb = geo.boundingBox;
     mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
@@ -44,7 +44,7 @@ function loadStl(url) {
     scene.add(mesh);
     const radius = bb.getSize(new THREE.Vector3()).length() / 2;
     const dist = Math.max(60, radius * 2.6);
-    cam.position.normalize().multiplyScalar(dist); // 保留視角方向,依零件大小取景
+    cam.position.normalize().multiplyScalar(dist); // 保留視角方向，依零件大小取景
     controls.target.set(0, -bb.min.y, 0);
   }, undefined, () => {});
 }
@@ -66,7 +66,7 @@ function scriptBlock(script) {
   const d = document.createElement("details");
   d.className = "script";
   const s = document.createElement("summary");
-  s.textContent = "AI 腳本(點開檢視)";
+  s.textContent = "AI 腳本（點開檢視）";
   const pre = document.createElement("pre");
   pre.textContent = script;
   d.append(s, pre);
@@ -87,7 +87,7 @@ es.onmessage = (e) => {
   const ev = JSON.parse(e.data);
   if (ev.type === "status") {
     if (ev.stage === "thinking") { setStatus("busy", "AI 寫腳本中"); line("s", "AI 寫腳本中…"); }
-    else if (ev.stage === "retry") { setStatus("busy", "自我修復中"); line("s", `建置失敗,AI 自我修復中(第 ${ev.attempt} 次)…`); }
+    else if (ev.stage === "retry") { setStatus("busy", "自我修復中"); line("s", `建置失敗，AI 自我修復中（第 ${ev.attempt} 次）…`); }
     else if (ev.stage === "building") { setStatus("busy", "FreeCAD 建置中"); line("s", "FreeCAD 建置中…"); }
   } else if (ev.type === "script") {
     scriptBlock(ev.script);
@@ -95,12 +95,12 @@ es.onmessage = (e) => {
     loadStl(ev.stl);
     renderParams(ev.params || []);
     setStatus("ok", "完成");
-    if (ev.label) line("s", "模型完成:" + ev.label);
+    if (ev.label) line("s", "模型完成：" + ev.label);
     showActions(true);
     refreshHistory();
   } else if (ev.type === "error") {
     setStatus("err", "失敗");
-    line("e", "建置失敗:\n" + (ev.stderr || "").slice(-800));
+    line("e", "建置失敗：\n" + (ev.stderr || "").slice(-800));
   }
 };
 
@@ -117,7 +117,7 @@ async function refreshSession() {
     const s = await (await fetch("/session")).json();
     sessionHasPhoto = !!s.image;
     $("photoline").hidden = !s.image;
-    if (s.image) $("photoline").textContent = "基準照片:" + s.image + "(重設可清除)";
+    if (s.image) $("photoline").textContent = "基準照片：" + s.image + "（重設可清除）";
     return s;
   } catch { return null; }
 }
@@ -125,7 +125,7 @@ async function send() {
   if (building) return;
   const msg = $("msg").value.trim();
   const photo = $("photo").files[0];
-  if (!msg && !photo && !sessionHasPhoto) { line("s", "先描述零件,或上傳一張照片。"); return; }
+  if (!msg && !photo && !sessionHasPhoto) { line("s", "先描述零件，或上傳一張照片。"); return; }
   setBusyUI(true);
   line("u", photo ? "[照片] " + msg : msg);
   $("msg").value = "";
@@ -134,11 +134,11 @@ async function send() {
   if (photo) fd.append("image", photo);
   try {
     const r = await fetch("/build", { method: "POST", body: fd });
-    if (r.status === 409) line("s", "上一個建置還在跑,等它結束再送。");
-    else if (!r.ok) { setStatus("err", "失敗"); line("e", "請求失敗:HTTP " + r.status); }
+    if (r.status === 409) line("s", "上一個建置還在跑，等它結束再送。");
+    else if (!r.ok) { setStatus("err", "失敗"); line("e", "請求失敗：HTTP " + r.status); }
     else { $("photo").value = ""; $("photo-btn").firstChild.textContent = "照片"; }
   } catch (err) {
-    setStatus("err", "失敗"); line("e", "連線失敗:" + err);
+    setStatus("err", "失敗"); line("e", "連線失敗：" + err);
   } finally {
     setBusyUI(false);
     refreshSession();
@@ -147,7 +147,7 @@ async function send() {
 $("go").addEventListener("click", send);
 $("msg").addEventListener("keydown", (e) => { if (e.key === "Enter") send(); });
 
-// ---------- params(尺寸表)----------
+// ---------- params（尺寸表）----------
 let baseline = {};
 function renderParams(list) {
   const box = $("param-rows");
@@ -193,17 +193,17 @@ $("rebuild").addEventListener("click", async () => {
   const changed = changedParams();
   if (building || !Object.keys(changed).length) return;
   setBusyUI(true);
-  line("u", "調整參數:" + Object.entries(changed).map(([k, v]) => k + "=" + v).join(", "));
+  line("u", "調整參數：" + Object.entries(changed).map(([k, v]) => k + "=" + v).join(", "));
   try {
     const r = await fetch("/rebuild", { method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ params: changed }) });
     if (r.status === 409) line("s", "上一個建置還在跑。");
-  } catch (err) { line("e", "連線失敗:" + err); }
+  } catch (err) { line("e", "連線失敗：" + err); }
   finally { setBusyUI(false); }
 });
 
-// ---------- history(版次表)----------
+// ---------- history（版次表）----------
 async function refreshHistory() {
   try {
     const list = await (await fetch("/history")).json();
@@ -235,7 +235,7 @@ for (const chip of document.querySelectorAll("#examples .chip")) {
 }
 $("photo").addEventListener("change", () => {
   const f = $("photo").files[0];
-  $("photo-btn").firstChild.textContent = f ? "照片:" + f.name.slice(0, 12) : "照片";
+  $("photo-btn").firstChild.textContent = f ? "照片：" + f.name.slice(0, 12) : "照片";
 });
 $("reset").addEventListener("click", async () => {
   await fetch("/reset", { method: "POST" });
@@ -245,7 +245,7 @@ $("reset").addEventListener("click", async () => {
   renderParams([]);
   showActions(false);
   setStatus("idle", "待命");
-  line("s", "已重設,從頭開始。");
+  line("s", "已重設，從頭開始。");
   refreshSession();
 });
 $("to-render").addEventListener("click", () =>
