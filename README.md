@@ -9,10 +9,10 @@ watch AI build it into a parametric CAD model, live.**
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![python](https://img.shields.io/badge/python-3.11%2B-blue)
 
-> 正體中文導讀:用一句話(或一張實物照片)描述零件,AI 寫出參數化 FreeCAD
-> 腳本、無頭建置,瀏覽器即時看 3D 結果。尺寸都是腳本頂端的大寫變數——在參數
-> 面板直接改數字,幾秒重建,不用再等 AI。可下載 STL/STEP,建置歷史能回到任一
-> 版本繼續改。這是給我自己用的工具,也是「AI 寫 CAD」跑得起來的示範。
+> 正體中文導讀：用一句話（或一張實物照片）描述零件，AI 寫出參數化 FreeCAD
+> 腳本、無頭建置，瀏覽器即時看 3D 結果。尺寸都是腳本頂端的大寫變數：在參數
+> 面板直接改數字，幾秒重建，不用再等 AI。可下載 STL/STEP，建置歷史能回到
+> 任一版本繼續改。這是給我自己用的工具，也是「AI 寫 CAD」跑得起來的示範。
 
 An AI writes a parametric FreeCAD script, runs it headless, and shows the
 resulting 3D model live in your browser. Say "make it longer" and it edits a
