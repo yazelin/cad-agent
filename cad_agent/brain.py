@@ -19,9 +19,40 @@ Hard rules:
 - End by exporting BOTH files to the current directory (bare names, no path):
     shape.exportStl('out.stl')
     shape.exportStep('out.step')
+- For fillets/rounds use Shape.makeFillet(radius, edges); for chamfers/bevels use
+  Shape.makeChamfer(size, edges). Pick the edges from shape.Edges by geometry
+  (a vertex's Z on the top face, an edge length matching a named side), never by
+  guessing raw indices.
 - Output ONLY raw Python. No markdown fences, no prose, no explanation.
 - Do not create or write any files; put the whole script in your reply text.
 """
+
+# Issue #5: a modification request is a feature-level edit. One-shot regeneration
+# makes fillets/chamfers/threads fragile; the fix is to touch only the named
+# feature and leave the rest of a working script untouched, so a failure's blast
+# radius (and self-repair scope) stays small.
+FEATURE_EDIT_GUIDANCE = """This is a feature-level edit. Change ONLY what the request names; keep the rest of the script exactly as-is:
+- Reproduce every other line of the current script VERBATIM — same variable names, values, and order. Do not rewrite, rename, reorder, or "tidy" unrelated code.
+- Add the requested feature as ONE small extra step on the already-built shape. For fillets/rounds use Shape.makeFillet(radius, edges); for chamfers/bevels use Shape.makeChamfer(size, edges). Do NOT rebuild the whole part just to add a fillet or chamfer.
+- Identify the edges/faces named in the request geometrically from the built shape (e.g. filter shape.Edges by a vertex Z on the top face, or by an edge length that matches a named side). Add any new dimension (a fillet radius, a chamfer size) as a new UPPERCASE variable at the top.
+- If the request only changes a number, change just that one variable's value and nothing else.
+"""
+
+
+def preserved_line_ratio(prev_script: str, new_script: str) -> float:
+    """Fraction of the previous script's non-blank lines that survive verbatim.
+
+    A true feature-level edit keeps almost every prior line and adds a small
+    step, so this stays near 1.0; a full rewrite (renamed vars, reordered code)
+    drops it well below. Used as a cheap proxy for "only touched the named
+    feature" in the acceptance test.
+    """
+    prev_lines = [ln for ln in prev_script.splitlines() if ln.strip()]
+    if not prev_lines:
+        return 1.0
+    new_lines = {ln for ln in new_script.splitlines() if ln.strip()}
+    kept = sum(1 for ln in prev_lines if ln in new_lines)
+    return kept / len(prev_lines)
 
 # `claude -p` is agentic: use an allowlist so only the Read tool is available.
 # Read is needed so claude can view the image by absolute path in generate_from_photo.
@@ -37,6 +68,7 @@ def build_prompt(user_msg: str, prev_script: str | None) -> str:
     parts = [FREECAD_SYSTEM_PROMPT]
     if prev_script:
         parts.append("Current script:\n" + prev_script)
+        parts.append(FEATURE_EDIT_GUIDANCE)
         parts.append("Modify it to satisfy this request: " + user_msg)
     else:
         parts.append("Write a script for: " + user_msg)
@@ -100,6 +132,7 @@ def build_photo_prompt(image_path: str, hint: str | None,
     parts = [PHOTO_SYSTEM_PROMPT, f"Image to model (read this file): {image_path}"]
     if prev_script:
         parts.append("Current script (revise it, do not start over):\n" + prev_script)
+        parts.append(FEATURE_EDIT_GUIDANCE)
         parts.append("Look at the image again and apply this change, fixing the "
                      "script to better match the part: "
                      + (hint or "improve the script's fidelity to the image"))
