@@ -120,6 +120,36 @@ def test_mounting_plate_end_to_end():
         shutil.rmtree(scratch, ignore_errors=True)
 
 
+def test_feature_iteration_adds_fillet_without_rewrite():
+    """Issue #5: a feature-level edit ("add a fillet") must add one small step on
+    the existing shape, not regenerate the whole script.
+
+    Acceptance: build a base plate, then iterate "add a 3mm fillet to the four top
+    edges". Assert the iterated script (a) still builds and (b) preserves most of
+    the base script's lines verbatim — a small additive edit, not a full rewrite.
+    """
+    scratch = Path(tempfile.mkdtemp(prefix="cad-agent-feat-test-", dir=Path.home()))
+    try:
+        base = brain.generate("a flat plate 80mm x 40mm x 5mm")
+        r1 = runner.run_freecad(base, scratch_base=scratch, timeout=180)
+        assert r1.ok, f"base build failed: {r1.stderr}\n--- script ---\n{base}"
+
+        edited = brain.generate(
+            "add a 3mm fillet to the four top edges", prev_script=base)
+        r2 = runner.run_freecad(edited, scratch_base=scratch, timeout=180)
+        assert r2.ok, (
+            f"fillet edit build failed: {r2.stderr[-800:]}\n--- script ---\n{edited}")
+        assert r2.stl_path and r2.stl_path.stat().st_size > 0
+
+        ratio = brain.preserved_line_ratio(base, edited)
+        assert ratio >= 0.5, (
+            f"feature edit rewrote too much: preserved only {ratio:.0%} of the base "
+            f"script's lines; expected a small additive edit (>=50% kept verbatim)."
+            f"\n--- base ---\n{base}\n--- edited ---\n{edited}")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
 def test_photo_to_buildable_part():
     fixture = Path(__file__).parent / "fixtures" / "part.png"
     if not fixture.exists():

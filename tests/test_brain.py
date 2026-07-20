@@ -11,6 +11,36 @@ def test_build_prompt_edit_includes_prev():
     assert "L = 80.0" in p
     assert "make it longer" in p
 
+def test_build_prompt_edit_carries_feature_discipline():
+    # Issue #5: an edit prompt must instruct a feature-level change — touch only
+    # the named feature, keep the rest verbatim, and offer the fillet/chamfer API.
+    p = brain.build_prompt("add an R3 fillet to the top four edges", "L = 80.0\nW = 40.0")
+    assert "L = 80.0" in p
+    assert "feature-level edit" in p
+    assert "VERBATIM" in p
+    assert "makeFillet" in p
+    assert "makeChamfer" in p
+
+def test_build_prompt_new_part_has_no_edit_discipline():
+    # a fresh part is a full generation, not a feature edit — no "keep verbatim" block
+    p = brain.build_prompt("an 80x40x5 plate", None)
+    assert "feature-level edit" not in p
+
+def test_preserved_line_ratio_minimal_edit_vs_rewrite():
+    prev = ("L = 80\nW = 40\nH = 5\n"
+            "shape = Part.makeBox(L, W, H)\nshape.exportStl('out.stl')")
+    # minimal feature edit: every base line kept, a fillet step + new param added
+    minimal = "FILLET_R = 3\n" + prev.replace(
+        "shape.exportStl('out.stl')",
+        "part = shape.makeFillet(FILLET_R, shape.Edges)\npart.exportStl('out.stl')")
+    assert brain.preserved_line_ratio(prev, minimal) >= 0.8
+    # full rewrite: renamed vars / restructured — most base lines gone
+    rewrite = "A = 80\nB = 40\nC = 5\nbox = Part.makeBox(A, B, C)\nbox.exportStl('out.stl')"
+    assert brain.preserved_line_ratio(prev, rewrite) < 0.5
+
+def test_preserved_line_ratio_empty_prev_is_one():
+    assert brain.preserved_line_ratio("", "L = 1") == 1.0
+
 def test_strip_fences():
     assert brain.strip_fences("```python\nL = 1\n```") == "L = 1"
     assert brain.strip_fences("L = 1") == "L = 1"

@@ -33,6 +33,10 @@ fully standalone.
 - **Build history** — every successful build is a revision (R1, R2, …);
   restore any earlier one and continue from it.
 - **Photo to CAD** — photograph a real part, get a parametric reconstruction.
+- **Feature-level iteration** — a follow-up like "round the top four edges R3" or
+  "chamfer this edge C2" adds one small step (FreeCAD `makeFillet` / `makeChamfer`)
+  onto the working script and keeps the rest verbatim, instead of regenerating the
+  whole part. Small edits stay robust where a one-shot rewrite is fragile.
 - **Self-repair** — build errors are fed back to the model (up to 2 retries).
 
 ![the app after a build: model on the work plane, parameter panel, revisions](docs/media/hero.png)
